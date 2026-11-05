@@ -2406,7 +2406,7 @@ async function updateProductCost(productId, newCost, notes = '') {
  * Generate full backup object containing all stores
  */
 async function createBackupData() {
-  const [products, recipes, promotions, orders, stockMovements, costHistory, expenses, settings] = await Promise.all([
+  const [products, recipes, promotions, orders, stockMovements, costHistory, expenses, rawSettings] = await Promise.all([
     db.getAll('products'),
     db.getAll('recipes'),
     db.getAll('promotions'),
@@ -2416,6 +2416,13 @@ async function createBackupData() {
     db.getAll('expenses'),
     db.getAll('settings')
   ]);
+
+  // CRITICAL SECURITY FILTER: Strip github_token and github_gist_id
+  // Never expose personal access tokens in backup JSON or cloud Gists
+  const safeSettings = (rawSettings || []).filter(s => 
+    s.key !== 'github_token' && 
+    s.key !== 'github_gist_id'
+  );
 
   const timestamp = new Date().toISOString();
 
@@ -2446,7 +2453,7 @@ async function createBackupData() {
       stock_movements: stockMovements,
       cost_history: costHistory,
       expenses,
-      settings
+      settings: safeSettings
     }
   };
 }
@@ -2497,6 +2504,15 @@ function validateBackupFile(parsedJson) {
 async function restoreFromBackup(backupData, mode = 'replace') {
   const data = backupData.data || backupData.raw || backupData;
 
+  // Preserve the current device's local github_token and gistId
+  const currentToken = (await db.getById('settings', 'github_token'))?.value || '';
+  const currentGistId = (await db.getById('settings', 'github_gist_id'))?.value || '';
+
+  const incomingSettings = (data.settings || []).filter(s => 
+    s.key !== 'github_token' && 
+    s.key !== 'github_gist_id'
+  );
+
   const storesToRestore = [
     { name: 'products', items: data.products },
     { name: 'recipes', items: data.recipes },
@@ -2505,7 +2521,7 @@ async function restoreFromBackup(backupData, mode = 'replace') {
     { name: 'stock_movements', items: data.stock_movements },
     { name: 'cost_history', items: data.cost_history },
     { name: 'expenses', items: data.expenses },
-    { name: 'settings', items: data.settings }
+    { name: 'settings', items: incomingSettings }
   ];
 
   for (const { name, items } of storesToRestore) {
@@ -2516,6 +2532,14 @@ async function restoreFromBackup(backupData, mode = 'replace') {
     }
 
     await db.bulkPut(name, items);
+  }
+
+  // Restore this device's own github token and gistId
+  if (currentToken) {
+    await db.putItem('settings', { key: 'github_token', value: currentToken });
+  }
+  if (currentGistId) {
+    await db.putItem('settings', { key: 'github_gist_id', value: currentGistId });
   }
 
   // Record restoration timestamp
@@ -2702,7 +2726,12 @@ async function uploadToGitHub() {
 
   // 1. Prepare current full database backup (sanitized, with tokens stripped)
   const backup = await createBackupData();
-  const backupJsonString = JSON.stringify(backup, null, 2);
+  let backupJsonString = JSON.stringify(backup, null, 2);
+
+  // Extra safety net: eliminate any GitHub PAT pattern (ghp_... or github_pat_...)
+  backupJsonString = backupJsonString
+    .replace(/ghp_[a-zA-Z0-9_]{20,}/g, 'FILTERED_SECRET')
+    .replace(/github_pat_[a-zA-Z0-9_]{20,}/g, 'FILTERED_SECRET');
 
   let gistId = config.gistId;
   let resultGist = null;
