@@ -665,7 +665,7 @@ h1.page-title {
 
 
 
-    /* Print thermal styles */
+    /* Print thermal receipt styles */
     @media print {
       body * { visibility: hidden; }
       #printable-receipt, #printable-receipt * { visibility: visible; }
@@ -1337,6 +1337,19 @@ async function runTransaction(storeNames, mode, fn) {
 }
 
 
+
+// Explicit database adapter namespace for bundled runtime
+const db = {
+  openDatabase,
+  getAll,
+  getById,
+  putItem,
+  addItem,
+  deleteItem,
+  clearStore,
+  bulkPut,
+  runTransaction
+};
 
 
 // ==========================================
