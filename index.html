@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -41,8 +41,9 @@
   --color-danger: #c53030;
   --color-success: #2f855a;
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-family-base: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-sans: var(--font-family-base);
+  --font-mono: var(--font-family-base);
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -57,7 +58,12 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  font-family: var(--font-family-base);
   -webkit-tap-highlight-color: transparent;
+}
+
+body, button, input, select, textarea {
+  font-family: var(--font-family-base);
 }
 
 body {
@@ -465,7 +471,9 @@ h1.page-title {
 }
 
 .table td.num {
-  font-family: var(--font-mono);
+  font-family: var(--font-family-base);
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
   font-size: 0.92rem;
   font-weight: 600;
 }
@@ -676,7 +684,7 @@ h1.page-title {
   border: 1px dashed var(--border-light);
   padding: 20px;
   border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
+  font-family: var(--font-family-base);
   font-size: 0.85rem;
   line-height: 1.6;
   color: var(--color-brown-dark);
@@ -747,7 +755,7 @@ h1.page-title {
     <div style="display:flex;height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:#936653;padding:20px;text-align:center;background:#f8f6f3;">
       <img src="Muki.png" alt="Muki" style="height:60px;width:auto;object-fit:contain;margin-bottom:6px;" onerror="this.style.display='none'">
       <div style="font-weight:800;font-size:1.6rem;letter-spacing:-0.03em;color:#936653;">MUKI STALL MANAGER</div>
-      <div style="font-size:0.9rem;color:#a78170;">正在初始化本地数据库与库存...</div>
+      <div style="font-size:0.9rem;color:#a78170;">Loading database & local inventory...</div>
     </div>
   </div>
 
@@ -2227,6 +2235,27 @@ async function cancelOrder(orderId, reason = 'Customer requested cancellation') 
 }
 
 /**
+ * Permanently delete an order and restore stock if not already cancelled
+ */
+async function deleteOrder(orderId) {
+  const order = await db.getById('orders', orderId);
+  if (!order) {
+    throw new Error('Order not found.');
+  }
+
+  // 1. If order was completed, restore inventory back to stock
+  if (order.status !== 'cancelled') {
+    await restoreStockForCancelledOrder(order);
+  }
+
+  // 2. Remove order from database
+  await db.deleteItem('orders', orderId);
+  await store.refreshAll();
+
+  return true;
+}
+
+/**
  * Update product cost and log historical cost change
  */
 async function updateProductCost(productId, newCost, notes = '') {
@@ -2545,7 +2574,7 @@ async function saveGitHubToken(token) {
  * Test GitHub token connection
  */
 async function testGitHubToken(token) {
-  if (!token) throw new Error('请输入 GitHub Token');
+  if (!token) throw new Error('Please enter your GitHub Token.');
 
   const res = await fetch('https://api.github.com/user', {
     headers: {
@@ -2555,8 +2584,8 @@ async function testGitHubToken(token) {
   });
 
   if (!res.ok) {
-    if (res.status === 401) throw new Error('Token 无效或已过期，请检查是否完整复制。');
-    throw new Error(`GitHub 连接失败: HTTP ${res.status}`);
+    if (res.status === 401) throw new Error('Invalid or expired GitHub Token. Please verify you copied it completely.');
+    throw new Error(`GitHub connection failed: HTTP ${res.status}`);
   }
 
   const user = await res.json();
@@ -2569,7 +2598,7 @@ async function testGitHubToken(token) {
 async function uploadToGitHub() {
   const config = await getGitHubConfig();
   if (!config.token) {
-    throw new Error('未配置 GitHub Token，请先在下方输入 Token。');
+    throw new Error('GitHub Token is not configured. Please save a token first.');
   }
 
   // 1. Prepare current full database backup
@@ -2644,7 +2673,7 @@ async function uploadToGitHub() {
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.message || `上传失败: HTTP ${response.status}`);
+    throw new Error(errorBody.message || `Upload failed: HTTP ${response.status}`);
   }
 
   const resultGist = await response.json();
@@ -2668,7 +2697,7 @@ async function uploadToGitHub() {
 async function pullFromGitHub() {
   const config = await getGitHubConfig();
   if (!config.token) {
-    throw new Error('未配置 GitHub Token，请先在下方输入 Token。');
+    throw new Error('GitHub Token is not configured. Please save a token first.');
   }
 
   let gistId = config.gistId;
@@ -2683,13 +2712,13 @@ async function pullFromGitHub() {
     });
 
     if (!gistsRes.ok) {
-      throw new Error(`获取 GitHub 数据失败: HTTP ${gistsRes.status}`);
+      throw new Error(`Failed to retrieve data from GitHub: HTTP ${gistsRes.status}`);
     }
 
     const gists = await gistsRes.json();
     const existing = gists.find(g => g.files && g.files[GIST_FILENAME]);
     if (!existing) {
-      throw new Error('在你的 GitHub 上未找到名为 muki-stall-data.json 的备份，请先在 iPad 上点击一次“上传同步”。');
+      throw new Error('No muki-stall-data.json backup found on GitHub yet. Please click "Upload to GitHub" on your stall device first.');
     }
 
     gistId = existing.id;
@@ -2705,13 +2734,13 @@ async function pullFromGitHub() {
   });
 
   if (!response.ok) {
-    throw new Error(`拉取 GitHub Gist 失败: HTTP ${response.status}`);
+    throw new Error(`Failed to pull from GitHub: HTTP ${response.status}`);
   }
 
   const gistData = await response.json();
   const fileEntry = gistData.files && gistData.files[GIST_FILENAME];
   if (!fileEntry || !fileEntry.content) {
-    throw new Error('GitHub 备份文件内容为空或已被移除。');
+    throw new Error('GitHub backup file is empty or removed.');
   }
 
   // Parse and validate content
@@ -2719,7 +2748,7 @@ async function pullFromGitHub() {
   try {
     parsed = JSON.parse(fileEntry.content);
   } catch (err) {
-    throw new Error('GitHub 备份数据损坏，无法解析为 JSON。');
+    throw new Error('GitHub backup file is corrupted and cannot be parsed as JSON.');
   }
 
   const validated = validateBackupFile(parsed);
@@ -3049,9 +3078,9 @@ function renderTopHeader(currentView) {
       </div>
       <div style="display:flex;gap:8px;">
         ${store.settings?.github_token ? `
-          <button type="button" class="btn btn-sm btn-secondary" data-action="quick-github-upload" title="摊位收摊：一键同步上传到 GitHub">
+          <button type="button" class="btn btn-sm btn-secondary" data-action="quick-github-upload" title="Sync & Upload to GitHub">
             ${renderIcon('upload', 14)}
-            <span>同步上传</span>
+            <span>Sync</span>
           </button>
         ` : ''}
         <button type="button" class="btn btn-sm btn-secondary" data-action="quick-pos">
@@ -3399,7 +3428,7 @@ function renderPos() {
             <input type="text" 
               id="pos-search-input" 
               class="form-input" 
-              placeholder="搜索商品名称..." 
+              placeholder="Search products..." 
               value="${searchQuery}" 
               style="padding-left:34px;">
           </div>
@@ -3414,9 +3443,9 @@ function renderPos() {
               </button>
             `).join('')}
             
-            <button type="button" class="btn btn-sm btn-secondary" data-action="open-manage-categories-modal" title="增删商品分类" style="border-radius:20px;border-style:dashed;padding:4px 10px;white-space:nowrap;">
+            <button type="button" class="btn btn-sm btn-secondary" data-action="open-manage-categories-modal" title="Manage Categories" style="border-radius:20px;border-style:dashed;padding:4px 10px;white-space:nowrap;">
               ${renderIcon('plus', 12)}
-              <span>分类</span>
+              <span>Category</span>
             </button>
           </div>
         </div>
@@ -3426,7 +3455,7 @@ function renderPos() {
           ${filteredProducts.length === 0 ? `
             <div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--text-muted);">
               ${renderIcon('package', 36, 'style="opacity:0.4;margin-bottom:8px;"')}
-              <div>未找到匹配商品</div>
+              <div>No matching products found</div>
             </div>
           ` : filteredProducts.map(prod => {
             const isBundle = store.isBundleProduct(prod.id);
@@ -3444,7 +3473,7 @@ function renderPos() {
                 <div>
                   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:4px;">
                     <span class="badge badge-outline" style="font-size:0.65rem;">${prod.category}</span>
-                    ${isBundle ? `<span class="badge badge-bundle" style="font-size:0.65rem;">套餐</span>` : ''}
+                    ${isBundle ? `<span class="badge badge-bundle" style="font-size:0.65rem;">Bundle</span>` : ''}
                   </div>
                   <div style="font-weight:700;font-size:0.95rem;color:var(--color-brown-dark);line-height:1.25;margin-top:4px;">
                     ${prod.name}
@@ -3458,11 +3487,11 @@ function renderPos() {
                   
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:0.75rem;">
                     <span style="color:${isOut ? 'var(--color-danger)' : available <= 5 ? 'var(--color-orange)' : 'var(--text-muted)'};font-weight:600;">
-                      ${isOut ? '缺货' : `${available} ${isBundle ? '套' : '件'}`}
+                      ${isOut ? 'Out of stock' : `${available} in stock`}
                     </span>
                     ${cartQty > 0 ? `
                       <span class="badge" style="background:var(--color-brown);color:white;padding:2px 7px;">
-                        已加 ${cartQty}
+                        Added ${cartQty}
                       </span>
                     ` : ''}
                   </div>
@@ -3478,12 +3507,12 @@ function renderPos() {
         <div style="padding:14px 16px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center;">
           <div style="display:flex;align-items:center;gap:8px;">
             ${renderIcon('pos', 18)}
-            <span style="font-weight:700;font-size:1rem;color:var(--color-brown-dark);">当前购物车</span>
+            <span style="font-weight:700;font-size:1rem;color:var(--color-brown-dark);">Current Cart</span>
           </div>
           ${store.cart.length > 0 ? `
             <button type="button" class="btn btn-sm btn-secondary" data-action="pos-clear-cart" style="color:var(--color-danger);">
               ${renderIcon('trash', 14)}
-              <span>清空</span>
+              <span>Clear</span>
             </button>
           ` : ''}
         </div>
@@ -3493,8 +3522,8 @@ function renderPos() {
           ${store.cart.length === 0 ? `
             <div style="text-align:center;padding:60px 10px;color:var(--text-muted);">
               ${renderIcon('pos', 36, 'style="opacity:0.3;margin-bottom:12px;"')}
-              <div style="font-weight:600;">购物车为空</div>
-              <div style="font-size:0.8rem;margin-top:4px;">点击左侧商品卡片即可点单</div>
+              <div style="font-weight:600;">Cart is empty</div>
+              <div style="font-size:0.8rem;margin-top:4px;">Tap product cards on the left to add items</div>
             </div>
           ` : store.cart.map(item => `
             <div style="display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);">
@@ -3504,13 +3533,13 @@ function renderPos() {
                   
                   <!-- Editable Price on the fly -->
                   <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
-                    <span style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">单价 RM</span>
+                    <span style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">Price RM</span>
                     <input type="number" step="0.10" class="form-input number-input cart-item-price-input" 
                       data-product-id="${item.productId}" 
                       value="${item.unitPrice}" 
-                      title="点击可直接修改此项售价(临时优惠)"
+                      title="Click to edit unit price (special offer)"
                       style="width:78px;padding:2px 6px;font-size:0.85rem;height:26px;border-color:${item.isCustomPrice ? 'var(--color-orange)' : 'var(--border-light)'};background:#fff;">
-                    ${item.isCustomPrice ? '<span class="badge badge-bundle" style="font-size:0.65rem;padding:1px 5px;">临时改价</span>' : ''}
+                    ${item.isCustomPrice ? '<span class="badge badge-bundle" style="font-size:0.65rem;padding:1px 5px;">Custom Price</span>' : ''}
                   </div>
                 </div>
 
@@ -3539,9 +3568,9 @@ function renderPos() {
         <div style="padding:14px 16px;border-top:1px solid var(--border-light);background-color:var(--color-white);">
           <!-- Promotion Selector -->
           <div style="margin-bottom:8px;">
-            <label class="form-label" style="font-size:0.72rem;margin-bottom:3px;">套餐 / 预设促销</label>
+            <label class="form-label" style="font-size:0.72rem;margin-bottom:3px;">Preset Promotion / Bundle</label>
             <select id="pos-promo-select" class="form-select" style="font-size:0.82rem;padding:5px 8px;">
-              <option value="">不使用预设套餐</option>
+              <option value="">No preset promotion</option>
               ${activePromos.map(p => `
                 <option value="${p.id}" ${selectedPromotionId === p.id ? 'selected' : ''}>
                   ${p.name} (${p.type === 'bundle_price' ? `RM${p.price}` : p.type === 'fixed_discount' ? `-RM${p.value}` : `-${p.value}%`})
@@ -3550,23 +3579,23 @@ function renderPos() {
             </select>
           </div>
 
-          <!-- Manual Order Discount (减多少) -->
+          <!-- Manual Order Discount -->
           <div style="margin-bottom:12px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:8px 10px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
               <label class="form-label" style="font-size:0.72rem;margin-bottom:0;display:flex;align-items:center;gap:4px;">
                 ${renderIcon('tag', 13)}
-                <span>整单临时减免 / 立减 (减多少)</span>
+                <span>Order Discount (Less RM)</span>
               </label>
             </div>
             <div style="display:flex;align-items:center;gap:6px;">
-              <span style="font-family:var(--font-mono);font-weight:700;color:var(--color-brown);font-size:0.85rem;">立减 RM</span>
+              <span style="font-family:var(--font-mono);font-weight:700;color:var(--color-brown);font-size:0.85rem;">Less RM</span>
               <input type="number" step="0.50" id="pos-manual-discount-input" class="form-input number-input" 
                 placeholder="0.00" 
                 value="${store.getManualDiscount() > 0 ? store.getManualDiscount() : ''}" 
                 style="padding:3px 8px;font-size:0.9rem;font-weight:700;flex:1;background:#fff;height:30px;">
               ${store.getManualDiscount() > 0 ? `
                 <button type="button" class="btn btn-sm btn-secondary" id="pos-clear-manual-discount-btn" style="padding:2px 8px;font-size:0.75rem;height:30px;">
-                  清除
+                  Clear
                 </button>
               ` : ''}
             </div>
@@ -3575,23 +3604,23 @@ function renderPos() {
           <!-- Numbers Breakdown -->
           <div style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;margin-bottom:12px;">
             <div style="display:flex;justify-content:space-between;color:var(--text-muted);">
-              <span>商品小计</span>
+              <span>Subtotal</span>
               <span class="num">${formatRM(cartSubtotal)}</span>
             </div>
             ${promoDiscount > 0 ? `
               <div style="display:flex;justify-content:space-between;color:var(--color-success);font-weight:600;">
-                <span>套餐优惠 (${currentPromo.name})</span>
+                <span>Promotion (${currentPromo.name})</span>
                 <span class="num">- ${formatRM(promoDiscount)}</span>
               </div>
             ` : ''}
             ${manualDiscount > 0 ? `
               <div style="display:flex;justify-content:space-between;color:var(--color-orange);font-weight:700;">
-                <span>临时立减优惠</span>
+                <span>Order Discount</span>
                 <span class="num">- ${formatRM(manualDiscount)}</span>
               </div>
             ` : ''}
             <div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:6px;border-top:1px dashed var(--border-light);">
-              <span style="font-weight:700;font-size:1rem;color:var(--color-brown-dark);">应付总额</span>
+              <span style="font-weight:700;font-size:1rem;color:var(--color-brown-dark);">Total Payable</span>
               <span class="num" style="font-size:1.45rem;font-weight:800;color:var(--color-brown);">
                 ${formatRM(finalTotal)}
               </span>
@@ -3600,7 +3629,7 @@ function renderPos() {
 
           <!-- Payment Method Selector: Cash, DuitNow QR, TnG, Other -->
           <div style="margin-bottom:12px;">
-            <label class="form-label" style="font-size:0.72rem;margin-bottom:4px;">支付方式</label>
+            <label class="form-label" style="font-size:0.72rem;margin-bottom:4px;">Payment Method</label>
             <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:6px;">
               ${['Cash', 'DuitNow QR', 'TnG', 'Other'].map(pm => `
                 <button type="button" 
@@ -3619,7 +3648,7 @@ function renderPos() {
                 <input type="text" 
                   id="pos-other-payment-input" 
                   class="form-input" 
-                  placeholder="支付方式备注 (例如: 转账/刷卡/挂账...)" 
+                  placeholder="Payment note (e.g. Bank transfer, GrabPay...)" 
                   value="${otherPaymentNote}" 
                   style="font-size:0.82rem;padding:5px 8px;background:#fff;border-color:var(--color-orange);">
               </div>
@@ -3634,7 +3663,7 @@ function renderPos() {
             style="width:100%;font-size:1.02rem;"
             ${store.cart.length === 0 ? 'disabled' : ''}>
             ${renderIcon('check', 18)}
-            <span>收款 ${formatRM(finalTotal)} (${selectedPaymentMethod === 'Other' && otherPaymentNote ? `Other: ${otherPaymentNote}` : selectedPaymentMethod})</span>
+            <span>Charge ${formatRM(finalTotal)} (${selectedPaymentMethod === 'Other' && otherPaymentNote ? `Other: ${otherPaymentNote}` : selectedPaymentMethod})</span>
           </button>
         </div>
       </div>
@@ -4113,11 +4142,9 @@ function renderDailyRecords() {
                         <button type="button" class="btn btn-sm btn-secondary" data-action="inspect-order" data-order-id="${o.id}">
                           Inspect
                         </button>
-                        ${!isCancelled ? `
-                          <button type="button" class="btn btn-sm btn-danger" data-action="cancel-order-prompt" data-order-id="${o.id}" style="margin-left:4px;">
-                            Void
-                          </button>
-                        ` : ''}
+                        <button type="button" class="btn btn-sm btn-danger" data-action="delete-order-prompt" data-order-id="${o.id}" style="margin-left:4px;" title="Delete order and restore inventory">
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   `;
@@ -4520,17 +4547,17 @@ function renderProducts() {
     <div>
       <div class="page-header-row">
         <div>
-          <h1 class="page-title">商品与成本管理</h1>
-          <div class="page-subtitle">配置商品售价、供应商成本、分类标签与历史调价记录</div>
+          <h1 class="page-title">Products & Cost Management</h1>
+          <div class="page-subtitle">Manage products, prices, supplier costs, categories, and cost audit history.</div>
         </div>
         <div style="display:flex;gap:10px;">
           <button type="button" class="btn btn-secondary" data-action="open-manage-categories-modal">
             ${renderIcon('tag', 16)}
-            <span>分类管理</span>
+            <span>Manage Categories</span>
           </button>
           <button type="button" class="btn btn-primary" data-action="open-add-product-modal">
             ${renderIcon('plus', 16)}
-            <span>添加新商品</span>
+            <span>Add Product</span>
           </button>
         </div>
       </div>
@@ -4542,14 +4569,14 @@ function renderProducts() {
           data-action="products-tab" 
           data-tab="list">
           ${renderIcon('package', 15)}
-          <span>全部商品 (${products.length})</span>
+          <span>All Products (${products.length})</span>
         </button>
         <button type="button" 
           class="btn btn-sm ${activeProductsTab === 'costs' ? 'btn-primary' : 'btn-secondary'}" 
           data-action="products-tab" 
           data-tab="costs">
           ${renderIcon('expenses', 15)}
-          <span>成本调价日志 (${costHistory.length})</span>
+          <span>Cost Change Logs (${costHistory.length})</span>
         </button>
       </div>
 
@@ -4565,14 +4592,14 @@ function renderProductList(products) {
         <table class="table">
           <thead>
             <tr>
-              <th>商品名称</th>
-              <th>分类</th>
-              <th style="text-align:right;">当前售价</th>
-              <th style="text-align:right;">单位成本</th>
-              <th style="text-align:right;">物理库存</th>
-              <th style="text-align:center;">类型</th>
-              <th style="text-align:center;">状态</th>
-              <th style="text-align:right;">操作</th>
+              <th>Product Name</th>
+              <th>Category</th>
+              <th style="text-align:right;">Price</th>
+              <th style="text-align:right;">Unit Cost</th>
+              <th style="text-align:right;">Stock</th>
+              <th style="text-align:center;">Type</th>
+              <th style="text-align:center;">Status</th>
+              <th style="text-align:right;">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -4587,7 +4614,7 @@ function renderProductList(products) {
                       ${p.image ? `<img src="${p.image}" alt="" style="width:28px;height:28px;border-radius:4px;object-fit:cover;border:1px solid var(--border-light);">` : ''}
                       <div>
                         <div>${p.name}</div>
-                        ${p.needs_config ? `<span class="badge badge-warning" style="margin-top:2px;">待配置</span>` : ''}
+                        ${p.needs_config ? `<span class="badge badge-warning" style="margin-top:2px;">Needs Config</span>` : ''}
                       </div>
                     </div>
                   </td>
@@ -4599,27 +4626,27 @@ function renderProductList(products) {
                     ${formatRM(computedCost)}
                   </td>
                   <td class="num" style="text-align:right;">
-                    ${isBundle ? '<span style="color:var(--text-light);font-size:0.8rem;">(配方换算)</span>' : (Number(p.stock) || 0)}
+                    ${isBundle ? '<span style="color:var(--text-light);font-size:0.8rem;">(Formula)</span>' : (Number(p.stock) || 0)}
                   </td>
                   <td style="text-align:center;">
                     ${isBundle 
-                      ? `<span class="badge badge-bundle">组合套餐</span>` 
-                      : `<span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);">单品</span>`}
+                      ? `<span class="badge badge-bundle">Bundle</span>` 
+                      : `<span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);">Single</span>`}
                   </td>
                   <td style="text-align:center;">
                     ${p.is_active !== false 
-                      ? `<span class="badge badge-active">在售</span>` 
-                      : `<span class="badge badge-cancelled">停售</span>`}
+                      ? `<span class="badge badge-active">Active</span>` 
+                      : `<span class="badge badge-cancelled">Disabled</span>`}
                   </td>
                   <td style="text-align:right;white-space:nowrap;">
                     <button type="button" class="btn btn-sm btn-secondary" data-action="quick-edit-cost" data-product-id="${p.id}">
-                      修改成本
+                      Edit Cost
                     </button>
                     <button type="button" class="btn btn-sm btn-secondary" data-action="edit-product" data-product-id="${p.id}" style="margin-left:4px;">
-                      编辑
+                      Edit
                     </button>
                     <button type="button" class="btn btn-sm btn-secondary" data-action="toggle-product-active" data-product-id="${p.id}" style="margin-left:4px;">
-                      ${p.is_active !== false ? '停售' : '启用'}
+                      ${p.is_active !== false ? 'Disable' : 'Enable'}
                     </button>
                   </td>
                 </tr>
@@ -4636,27 +4663,27 @@ function renderCostHistory(costHistory) {
   return `
     <div class="card">
       <div style="margin-bottom:14px;">
-        <div class="card-title">成本变动审计日志</div>
+        <div class="card-title">Cost Change Audit Log</div>
         <div class="card-subtitle">
-          每次修改成本均会永久留痕。过去已完成的历史订单利润绝不会被篡改。
+          Every cost modification is logged permanently. Historical order profits will never be altered.
         </div>
       </div>
 
       ${costHistory.length === 0 ? `
         <div style="text-align:center;padding:50px 20px;color:var(--text-muted);">
-          尚未有成本调价记录，当前均为初始基准成本。
+          No cost change records yet. Currently using baseline costs.
         </div>
       ` : `
         <div class="table-container">
           <table class="table">
             <thead>
               <tr>
-                <th>调价时间</th>
-                <th>商品</th>
-                <th style="text-align:right;">原成本</th>
-                <th style="text-align:right;">新成本</th>
-                <th style="text-align:right;">差额</th>
-                <th>备注原因</th>
+                <th>Date & Time</th>
+                <th>Product</th>
+                <th style="text-align:right;">Previous Cost</th>
+                <th style="text-align:right;">New Cost</th>
+                <th style="text-align:right;">Difference</th>
+                <th>Reason / Notes</th>
               </tr>
             </thead>
             <tbody>
@@ -4711,8 +4738,8 @@ function renderBackup() {
     <div>
       <div class="page-header-row">
         <div>
-          <h1 class="page-title">数据同步与备份</h1>
-          <div class="page-subtitle">支持 GitHub 云端一键同步、JSON 完整备份与 Excel 报表导出</div>
+          <h1 class="page-title">Data Sync & Backup</h1>
+          <div class="page-subtitle">One-click GitHub Gist cloud sync, complete JSON backups, and CSV spreadsheet exports.</div>
         </div>
       </div>
 
@@ -4722,13 +4749,13 @@ function renderBackup() {
           <div>
             <div style="display:flex;align-items:center;gap:8px;">
               ${renderIcon('backup', 22)}
-              <h2 class="card-title" style="font-size:1.15rem;margin-bottom:0;">GitHub 云端一键同步 (iPad ⇄ 电脑)</h2>
+              <h2 class="card-title" style="font-size:1.15rem;margin-bottom:0;">GitHub Cloud Sync (iPad ⇄ Desktop ⇄ Phone)</h2>
               ${isGitHubConfigured 
-                ? `<span class="badge badge-active">${renderIcon('check', 12)} 已连接 GitHub</span>` 
-                : `<span class="badge badge-outline">未连接</span>`}
+                ? `<span class="badge badge-active">${renderIcon('check', 12)} Connected to GitHub</span>` 
+                : `<span class="badge badge-outline">Not Connected</span>`}
             </div>
             <p class="card-subtitle" style="margin-top:6px;line-height:1.5;">
-              利用你现有的 GitHub 免费私有空间存储数据。在 iPad 摊位收摊后按<strong>“上传同步”</strong>，晚上回家在电脑上按<strong>“拉取同步”</strong>即可查看完整账本！
+              Store data securely in your free private GitHub Gist. Click <strong>"Upload to GitHub"</strong> when closing the stall, and click <strong>"Pull Data from GitHub"</strong> at home to see complete records!
             </p>
           </div>
         </div>
@@ -4738,12 +4765,12 @@ function renderBackup() {
           <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:18px;">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:0.85rem;color:var(--text-muted);margin-bottom:14px;">
               <div>
-                <span>上次云端上传：</span>
-                <strong style="color:var(--color-black);font-family:var(--font-mono);">${lastGithubUpload ? formatDateTime(lastGithubUpload) : '尚未上传'}</strong>
+                <span>Last Cloud Upload:</span>
+                <strong style="color:var(--color-black);">${lastGithubUpload ? formatDateTime(lastGithubUpload) : 'Never'}</strong>
               </div>
               <div>
-                <span>上次云端拉取：</span>
-                <strong style="color:var(--color-black);font-family:var(--font-mono);">${lastGithubPull ? formatDateTime(lastGithubPull) : '尚未拉取'}</strong>
+                <span>Last Cloud Pull:</span>
+                <strong style="color:var(--color-black);">${lastGithubPull ? formatDateTime(lastGithubPull) : 'Never'}</strong>
               </div>
             </div>
 
@@ -4751,20 +4778,20 @@ function renderBackup() {
               <button type="button" class="btn btn-primary btn-lg" id="btn-github-upload" style="display:flex;flex-direction:column;gap:3px;padding:12px 16px;">
                 <div style="display:flex;align-items:center;gap:6px;font-size:0.95rem;font-weight:700;">
                   ${renderIcon('upload', 18)}
-                  <span>1. 摊位收摊：上传同步至 GitHub</span>
+                  <span>1. Closing Stall: Upload to GitHub</span>
                 </div>
                 <div style="font-size:0.75rem;opacity:0.85;font-weight:normal;">
-                  将 iPad 本地今日销售与库存保存到云端
+                  Save today's sales and stock to your private cloud
                 </div>
               </button>
 
               <button type="button" class="btn btn-secondary btn-lg" id="btn-github-pull" style="display:flex;flex-direction:column;gap:3px;padding:12px 16px;border-color:var(--color-black);">
                 <div style="display:flex;align-items:center;gap:6px;font-size:0.95rem;font-weight:700;">
                   ${renderIcon('download', 18)}
-                  <span>2. 回家查看：从 GitHub 拉取数据</span>
+                  <span>2. At Home: Pull Data from GitHub</span>
                 </div>
                 <div style="font-size:0.75rem;color:var(--text-muted);font-weight:normal;">
-                  从云端恢复最新账本到这台电脑
+                  Sync latest stall records to this device
                 </div>
               </button>
             </div>
@@ -4772,10 +4799,10 @@ function renderBackup() {
 
           <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;color:var(--text-muted);">
             <div>
-              绑定的 Token：<span style="font-family:var(--font-mono);">${githubToken.substring(0, 7)}••••••••</span>
+              Saved Token: <span>${githubToken.substring(0, 7)}••••••••</span>
             </div>
             <button type="button" class="btn btn-sm btn-secondary" id="btn-change-github-token">
-              更换 Token
+              Change Token
             </button>
           </div>
         ` : `
@@ -4783,21 +4810,21 @@ function renderBackup() {
           <div style="background:#FAF5FF;border:1px solid #E9D5FF;border-radius:var(--radius-md);padding:18px;margin-bottom:14px;">
             <div style="font-weight:700;font-size:0.92rem;color:#6B21A8;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
               ${renderIcon('info', 16)}
-              <span>只需 1 步绑定你的 GitHub Token（永久免费）</span>
+              <span>Simple 1-Step Setup: Connect GitHub Token (Free)</span>
             </div>
             <p style="font-size:0.85rem;color:#7E22CE;line-height:1.5;margin-bottom:14px;">
-              点击下方按钮，GitHub 会自动为你勾选好所需的 <code>gist</code> 读写权限。在弹出的页面底部点击绿色的 <strong>“Generate token”</strong>，把生成的秘钥复制回来粘贴即可！
+              Click the button below to generate a token with <code>gist</code> permission pre-selected. Click <strong>"Generate token"</strong> on GitHub, then paste the key here!
             </p>
 
             <a href="https://github.com/settings/tokens/new?scopes=gist&description=Muki+Stall+Manager+Sync" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary" style="background:#fff;border-color:#C084FC;color:#6B21A8;font-weight:600;margin-bottom:14px;text-decoration:none;display:inline-flex;">
               ${renderIcon('plus', 14)}
-              <span>👉 点击前往 GitHub 一键生成专属 Token</span>
+              <span>👉 Open GitHub to Generate Token (Pre-configured)</span>
             </a>
 
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-              <input type="password" id="input-github-token" class="form-input" placeholder="在此粘贴 Token (以 ghp_ 开头)" style="flex:1;min-width:260px;font-family:var(--font-mono);">
+              <input type="password" id="input-github-token" class="form-input" placeholder="Paste Token here (starts with ghp_)" style="flex:1;min-width:260px;">
               <button type="button" class="btn btn-primary" id="btn-save-github-token">
-                <span>保存并开启云端同步</span>
+                <span>Save & Enable Cloud Sync</span>
               </button>
             </div>
           </div>
@@ -4808,10 +4835,10 @@ function renderBackup() {
       <div style="background:var(--color-white);border:1px solid var(--border-light);border-left:4px solid var(--color-black);border-radius:var(--radius-md);padding:16px 20px;margin-bottom:24px;">
         <div style="font-weight:700;font-size:0.95rem;color:var(--color-black);display:flex;align-items:center;gap:8px;margin-bottom:4px;">
           ${renderIcon('info', 18)}
-          <span>本地离线存储说明</span>
+          <span>Offline & Device Storage</span>
         </div>
         <p style="font-size:0.85rem;color:var(--text-muted);line-height:1.5;">
-          日常摆摊时，即便现场没有 Wi-Fi 信号，所有账本和库存也会安全保存在浏览器本地（IndexedDB）。建议在每次摆摊结束时，点击上方<strong>“上传同步至 GitHub”</strong>，既能在电脑上随时查账，又能作为永久安全的云端防丢备份！
+          During market stalls, all sales and inventory are stored locally in IndexedDB even without Wi-Fi. Upload to GitHub at the end of each day for safe cloud backup and syncing across devices.
         </p>
       </div>
 
@@ -4822,22 +4849,22 @@ function renderBackup() {
           <div>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
               ${renderIcon('download', 20)}
-              <h2 class="card-title">本地导出 JSON 文件</h2>
+              <h2 class="card-title">Export Local JSON File</h2>
             </div>
             <p class="card-subtitle" style="line-height:1.5;margin-bottom:14px;">
-              直接下载一个 <code>.json</code> 离线备份文件保存到电脑或 iCloud 文件夹中。
+              Download an offline <code>.json</code> backup file to your computer or iCloud Drive.
             </p>
 
             <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;margin-bottom:14px;font-size:0.82rem;color:var(--text-muted);">
-              <div>商品数：<strong style="color:var(--color-black);">${store.products.length}</strong> | 订单数：<strong style="color:var(--color-black);">${store.orders.length}</strong> | 支出记录：<strong style="color:var(--color-black);">${store.expenses.length}</strong></div>
-              <div style="margin-top:4px;">上次本地备份：<strong style="color:var(--color-black);">${lastBackup ? formatDateTime(lastBackup) : '无'}</strong></div>
+              <div>Products: <strong style="color:var(--color-black);">${store.products.length}</strong> | Orders: <strong style="color:var(--color-black);">${store.orders.length}</strong> | Expenses: <strong style="color:var(--color-black);">${store.expenses.length}</strong></div>
+              <div style="margin-top:4px;">Last Local Backup: <strong style="color:var(--color-black);">${lastBackup ? formatDateTime(lastBackup) : 'None'}</strong></div>
             </div>
           </div>
 
           <div>
             <button type="button" class="btn btn-secondary" data-action="export-json-backup" style="width:100%;">
               ${renderIcon('download', 16)}
-              <span>下载本地备份文件 (JSON)</span>
+              <span>Download Backup File (.json)</span>
             </button>
           </div>
         </div>
@@ -4847,23 +4874,23 @@ function renderBackup() {
           <div>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
               ${renderIcon('upload', 20)}
-              <h2 class="card-title">从本地文件恢复</h2>
+              <h2 class="card-title">Restore from Backup File</h2>
             </div>
             <p class="card-subtitle" style="line-height:1.5;margin-bottom:14px;">
-              选择之前下载的 <code>.json</code> 备份文件进行数据导入。导入前会有详细记录确认弹窗。
+              Select a previously saved <code>.json</code> backup file to restore records.
             </p>
 
             <div style="background:#fafafa;border:2px dashed var(--border-light);border-radius:var(--radius-md);padding:18px;text-align:center;">
               <input type="file" id="backup-file-input" accept=".json,application/json" style="display:none;">
               <button type="button" class="btn btn-secondary btn-sm" data-action="trigger-file-select">
                 ${renderIcon('upload', 14)}
-                <span>选择 JSON 备份文件</span>
+                <span>Select JSON Backup File</span>
               </button>
             </div>
           </div>
 
           <div style="margin-top:12px;font-size:0.75rem;color:var(--text-muted);">
-            ${lastRestored ? `上次恢复时间：${formatDateTime(lastRestored)}` : ''}
+            ${lastRestored ? `Last Restored: ${formatDateTime(lastRestored)}` : ''}
           </div>
         </div>
       </div>
@@ -4872,20 +4899,20 @@ function renderBackup() {
       <div class="card">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
           ${renderIcon('dailyRecords', 20)}
-          <h2 class="card-title">导出 Excel / CSV 电子表格</h2>
+          <h2 class="card-title">Export Spreadsheets (CSV / Excel)</h2>
         </div>
         <p class="card-subtitle" style="margin-bottom:14px;">
-          导出为兼容 Microsoft Excel、Apple Numbers 和 Google Sheets 的电子表格报表。
+          Download reports compatible with Microsoft Excel, Apple Numbers, and Google Sheets.
         </p>
 
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <button type="button" class="btn btn-secondary" data-action="export-sales-csv">
             ${renderIcon('download', 16)}
-            <span>导出全部销售流水 (CSV)</span>
+            <span>Export Sales Orders (CSV)</span>
           </button>
           <button type="button" class="btn btn-secondary" data-action="export-inventory-csv">
             ${renderIcon('download', 16)}
-            <span>导出库存与商品清单 (CSV)</span>
+            <span>Export Products & Stock (CSV)</span>
           </button>
         </div>
       </div>
@@ -5177,7 +5204,7 @@ function attachEventListeners() {
       const totalDiscount = round(promoDiscount + manualDiscount);
 
       confirmSaleBtn.disabled = true;
-      confirmSaleBtn.innerHTML = `<span>处理订单中...</span>`;
+      confirmSaleBtn.innerHTML = `<span>Processing sale...</span>`;
 
       try {
         const newOrder = await createOrder({
@@ -5188,7 +5215,7 @@ function attachEventListeners() {
           customDiscount: totalDiscount
         });
 
-        showToast(`订单 ${newOrder.order_number} 收款成功！`, 'success');
+        showToast(`Order ${newOrder.order_number} completed successfully!`, 'success');
         openOrderReceiptModal(newOrder);
       } catch (err) {
         showToast(err.message, 'danger');
@@ -5254,11 +5281,19 @@ function attachEventListeners() {
   });
 
   // Cancel order prompt
+  appRoot.querySelectorAll('[data-action="delete-order-prompt"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const orderId = btn.getAttribute('data-order-id');
+      const order = await db.getById('orders', orderId);
+      if (order) openDeleteOrderModal(order);
+    });
+  });
+
   appRoot.querySelectorAll('[data-action="cancel-order-prompt"]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const orderId = btn.getAttribute('data-order-id');
       const order = await db.getById('orders', orderId);
-      if (order) openCancelOrderModal(order);
+      if (order) openDeleteOrderModal(order);
     });
   });
 
@@ -5390,20 +5425,20 @@ function attachEventListeners() {
       const tokenInput = document.getElementById('input-github-token');
       const token = tokenInput ? tokenInput.value.trim() : '';
       if (!token) {
-        alert('请输入以 ghp_ 开头的 GitHub Token');
+        alert('Please enter a GitHub Token starting with ghp_');
         return;
       }
       saveTokenBtn.disabled = true;
-      saveTokenBtn.innerText = '正在验证连接...';
+      saveTokenBtn.innerText = 'Verifying connection...';
       try {
         const username = await testGitHubToken(token);
         await saveGitHubToken(token);
-        showToast(`已成功连接 GitHub 账号 (${username})！`, 'success');
+        showToast(`Connected successfully to GitHub (${username})!`, 'success');
         renderApp();
       } catch (err) {
         alert(err.message);
         saveTokenBtn.disabled = false;
-        saveTokenBtn.innerText = '保存并开启云端同步';
+        saveTokenBtn.innerText = 'Save & Enable Cloud Sync';
       }
     });
   }
@@ -5411,7 +5446,7 @@ function attachEventListeners() {
   const changeTokenBtn = document.getElementById('btn-change-github-token');
   if (changeTokenBtn) {
     changeTokenBtn.addEventListener('click', async () => {
-      if (confirm('确定要更换绑定的 GitHub Token 吗？')) {
+      if (confirm('Are you sure you want to change the saved GitHub Token?')) {
         await saveGitHubToken('');
         renderApp();
       }
@@ -5421,13 +5456,13 @@ function attachEventListeners() {
   const triggerUpload = async (btn) => {
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = '<span>正在上传至 GitHub...</span>';
+      btn.innerHTML = '<span>Uploading to GitHub...</span>';
     }
     try {
       const res = await uploadToGitHub();
-      showToast(`同步成功！已上传至 GitHub (${res.summary.orders} 笔订单，${res.summary.products} 件商品)`, 'success');
+      showToast(`Sync successful! Uploaded to GitHub (${res.summary.orders} orders, ${res.summary.products} products)`, 'success');
     } catch (err) {
-      alert(`上传同步失败: ${err.message}`);
+      alert(`Upload failed: ${err.message}`);
     } finally {
       renderApp();
     }
@@ -5446,14 +5481,14 @@ function attachEventListeners() {
   const githubPullBtn = document.getElementById('btn-github-pull');
   if (githubPullBtn) {
     githubPullBtn.addEventListener('click', async () => {
-      if (!confirm('将从 GitHub 云端拉取最新数据并恢复到本地，是否继续？')) return;
+      if (!confirm('Pull latest data from GitHub and restore on this device?')) return;
       githubPullBtn.disabled = true;
-      githubPullBtn.innerHTML = '<span>正在从 GitHub 拉取数据...</span>';
+      githubPullBtn.innerHTML = '<span>Pulling data from GitHub...</span>';
       try {
         const res = await pullFromGitHub();
-        showToast(`拉取成功！已恢复云端数据 (${res.counts.orders} 笔订单)`, 'success');
+        showToast(`Pull successful! Restored ${res.counts.orders} orders from GitHub`, 'success');
       } catch (err) {
-        alert(`拉取数据失败: ${err.message}`);
+        alert(`Pull failed: ${err.message}`);
       } finally {
         renderApp();
       }
@@ -5592,14 +5627,20 @@ function openOrderReceiptModal(order) {
             </div>
           </div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" id="modal-print-btn">
-            ${renderIcon('printer', 16)}
-            <span>Print Receipt</span>
+        <div class="modal-footer" style="display:flex;justify-content:space-between;align-items:center;">
+          <button type="button" class="btn btn-danger" id="modal-receipt-delete-btn" style="display:flex;align-items:center;gap:6px;" title="Delete this order and restore stock immediately">
+            ${renderIcon('trash', 14)}
+            <span>Delete Mistake</span>
           </button>
-          <button type="button" class="btn btn-primary" id="modal-next-sale-btn">
-            <span>Next Customer</span>
-          </button>
+          <div style="display:flex;gap:8px;">
+            <button type="button" class="btn btn-secondary" id="modal-print-btn">
+              ${renderIcon('printer', 16)}
+              <span>Print</span>
+            </button>
+            <button type="button" class="btn btn-primary" id="modal-next-sale-btn">
+              <span>Next Sale</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -5613,6 +5654,13 @@ function openOrderReceiptModal(order) {
   document.getElementById('modal-print-btn').addEventListener('click', () => {
     window.print();
   });
+  const receiptDeleteBtn = document.getElementById('modal-receipt-delete-btn');
+  if (receiptDeleteBtn) {
+    receiptDeleteBtn.addEventListener('click', () => {
+      closeModal();
+      openDeleteOrderModal(order);
+    });
+  }
 }
 
 // 2. Order Inspect Modal
@@ -5704,12 +5752,10 @@ function openOrderInspectModal(order) {
           </div>
         </div>
         <div class="modal-footer">
-          ${!isCancelled ? `
-            <button type="button" class="btn btn-danger" id="modal-void-order-btn">
-              ${renderIcon('undo', 16)}
-              <span>Void / Cancel Order</span>
-            </button>
-          ` : ''}
+          <button type="button" class="btn btn-danger" id="modal-delete-order-btn">
+            ${renderIcon('trash', 16)}
+            <span>Delete Order</span>
+          </button>
           <button type="button" class="btn btn-secondary" id="modal-close-footer-btn">Close</button>
         </div>
       </div>
@@ -5719,17 +5765,17 @@ function openOrderInspectModal(order) {
   document.getElementById('modal-close-btn').addEventListener('click', closeModal);
   document.getElementById('modal-close-footer-btn').addEventListener('click', closeModal);
 
-  const voidBtn = document.getElementById('modal-void-order-btn');
-  if (voidBtn) {
-    voidBtn.addEventListener('click', () => {
+  const deleteOrderBtn = document.getElementById('modal-delete-order-btn');
+  if (deleteOrderBtn) {
+    deleteOrderBtn.addEventListener('click', () => {
       closeModal();
-      openCancelOrderModal(order);
+      openDeleteOrderModal(order);
     });
   }
 }
 
-// 3. Cancel Order Confirmation Modal
-function openCancelOrderModal(order) {
+// 3. Delete Order Confirmation Modal
+function openDeleteOrderModal(order) {
   const container = document.getElementById('modal-container');
   if (!container) return;
 
@@ -5738,30 +5784,26 @@ function openCancelOrderModal(order) {
       <div class="modal-card" style="max-width:440px;">
         <div class="modal-header">
           <div class="modal-title" style="color:var(--color-danger);display:flex;align-items:center;gap:6px;">
-            ${renderIcon('alert', 18)}
-            <span>Void Order ${order.order_number}</span>
+            ${renderIcon('trash', 18)}
+            <span>Delete Order ${order.order_number}</span>
           </div>
           <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
         </div>
         <div class="modal-body">
-          <p style="font-size:0.88rem;color:var(--text-main);margin-bottom:12px;">
-            Are you sure you want to cancel this order?
+          <p style="font-size:0.9rem;color:var(--text-main);margin-bottom:12px;">
+            Are you sure you want to delete this mistaken order?
           </p>
-          <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-md);padding:12px;font-size:0.82rem;color:#991b1b;margin-bottom:16px;">
-            • Deducted component stock will be <strong>restored</strong> into inventory exactly once.<br>
-            • This order will be <strong>excluded</strong> from daily sales and revenue totals.<br>
-            • A permanent cancellation audit record will be logged.
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Reason for Cancellation</label>
-            <input type="text" id="cancel-reason-input" class="form-input" placeholder="e.g. Customer returned items, accidental punch..." value="Customer request">
+          <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-md);padding:12px;font-size:0.84rem;color:#991b1b;margin-bottom:16px;line-height:1.5;">
+            • Deducted product items will be <strong>restored into inventory</strong>.<br>
+            • Sales revenue, profit, and daily statistics will be <strong>recalculated automatically</strong>.<br>
+            • The order record will be permanently deleted.
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" id="modal-cancel-abort-btn">Back</button>
-          <button type="button" class="btn btn-danger" id="modal-cancel-confirm-btn">
-            <span>Confirm Void & Restore Stock</span>
+          <button type="button" class="btn btn-secondary" id="modal-delete-abort-btn">Cancel</button>
+          <button type="button" class="btn btn-danger" id="modal-delete-confirm-btn">
+            ${renderIcon('trash', 16)}
+            <span>Delete & Restore Stock</span>
           </button>
         </div>
       </div>
@@ -5769,18 +5811,22 @@ function openCancelOrderModal(order) {
   `;
 
   document.getElementById('modal-close-btn').addEventListener('click', closeModal);
-  document.getElementById('modal-cancel-abort-btn').addEventListener('click', closeModal);
+  document.getElementById('modal-delete-abort-btn').addEventListener('click', closeModal);
 
-  document.getElementById('modal-cancel-confirm-btn').addEventListener('click', async () => {
-    const reason = document.getElementById('cancel-reason-input').value;
+  document.getElementById('modal-delete-confirm-btn').addEventListener('click', async () => {
     try {
-      await cancelOrder(order.id, reason);
-      showToast(`Order ${order.order_number} voided. Stock restored.`, 'success');
+      await deleteOrder(order.id);
+      showToast(`Order ${order.order_number} deleted and stock restored.`, 'success');
       closeModal();
+      renderApp();
     } catch (err) {
-      alert(`Could not cancel order: ${err.message}`);
+      showToast(err.message, 'danger');
     }
   });
+}
+
+function openCancelOrderModal(order) {
+  openDeleteOrderModal(order);
 }
 
 // 4. Adjust Physical Stock Modal
@@ -5874,13 +5920,13 @@ function openManageCategoriesModal() {
         <div class="modal-header">
           <div class="modal-title" style="display:flex;align-items:center;gap:6px;">
             ${renderIcon('tag', 18)}
-            <span>商品分类管理</span>
+            <span>Manage Product Categories</span>
           </div>
           <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
         </div>
         <div class="modal-body">
           <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:14px;">
-            点击分类旁边的 × 即可删除，也可以随时在下方添加新分类：
+            Click × next to a category to delete it, or add new categories below:
           </p>
 
           <!-- Current Categories Tags -->
@@ -5888,7 +5934,7 @@ function openManageCategoriesModal() {
             ${categories.map(cat => `
               <div style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-secondary);border:1px solid var(--border-light);padding:5px 12px;border-radius:20px;font-size:0.88rem;font-weight:700;color:var(--color-brown);">
                 <span>${cat}</span>
-                <button type="button" class="btn-delete-cat" data-category="${cat}" title="删除此分类" style="background:none;border:none;color:var(--color-danger);cursor:pointer;font-size:0.85rem;line-height:1;padding:0 2px;display:flex;align-items:center;">
+                <button type="button" class="btn-delete-cat" data-category="${cat}" title="Delete Category" style="background:none;border:none;color:var(--color-danger);cursor:pointer;font-size:0.85rem;line-height:1;padding:0 2px;display:flex;align-items:center;">
                   ${renderIcon('x', 13)}
                 </button>
               </div>
@@ -5897,18 +5943,18 @@ function openManageCategoriesModal() {
 
           <!-- Add New Category -->
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">添加新分类</label>
+            <label class="form-label">Add New Category</label>
             <div style="display:flex;gap:8px;">
-              <input type="text" id="new-category-input" class="form-input" placeholder="输入新分类名称 (如 Keychains, Prints)">
+              <input type="text" id="new-category-input" class="form-input" placeholder="Enter category name (e.g. Keychains, Prints)">
               <button type="button" class="btn btn-primary" id="btn-add-category" style="white-space:nowrap;">
                 ${renderIcon('plus', 14)}
-                <span>添加</span>
+                <span>Add Category</span>
               </button>
             </div>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" id="modal-close-footer-btn">完成</button>
+          <button type="button" class="btn btn-secondary" id="modal-close-footer-btn">Done</button>
         </div>
       </div>
     </div>
@@ -5925,7 +5971,7 @@ function openManageCategoriesModal() {
       const val = input.value.trim();
       if (!val) return;
       await store.addCategory(val);
-      showToast(`已添加分类 "${val}"`, 'success');
+      showToast(`Category "${val}" added`, 'success');
       openManageCategoriesModal();
     };
     addBtn.addEventListener('click', handleAdd);
@@ -5938,9 +5984,9 @@ function openManageCategoriesModal() {
   container.querySelectorAll('.btn-delete-cat').forEach(btn => {
     btn.addEventListener('click', async () => {
       const cat = btn.getAttribute('data-category');
-      if (confirm(`确定要删除分类 "${cat}" 吗？`)) {
+      if (confirm(`Are you sure you want to delete category "${cat}"?`)) {
         await store.deleteCategory(cat);
-        showToast(`已删除分类 "${cat}"`, 'success');
+        showToast(`Category "${cat}" deleted`, 'success');
         openManageCategoriesModal();
       }
     });
@@ -6515,10 +6561,10 @@ async function bootstrap() {
     if (appRoot) {
       appRoot.innerHTML = `
         <div style="display:flex;height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:16px;color:#936653;padding:24px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">
-          <div style="font-weight:800;font-size:1.4rem;color:#DC2626;">系统启动遇到问题 (Startup Error)</div>
-          <div style="font-size:0.9rem;color:#a78170;max-width:400px;line-height:1.5;">${err.message || 'IndexedDB 存储加载异常'}</div>
+          <div style="font-weight:800;font-size:1.4rem;color:#DC2626;">System Startup Error</div>
+          <div style="font-size:0.9rem;color:#a78170;max-width:400px;line-height:1.5;">${err.message || 'Database initialization error'}</div>
           <button onclick="location.reload()" style="background:#936653;color:#f8f6f3;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem;">
-            重新加载 (Retry)
+            Reload
           </button>
         </div>
       `;
