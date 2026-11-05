@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
+  <meta name="theme-color" content="#936653">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Muki POS">
@@ -11,34 +11,42 @@
   
   <style>
 /* =========================================================
-   Muki Stall Manager - Minimalist Black & White Theme
-   Tailored for iPads, Tablets, Mobile, and Desktop
+   Muki Stall Manager — Brand Theme
+   Brand Brown: #936653
+   Cream Background: #f8f6f3
+   Accents: Orange (#f9a127), Soft Yellow (#f1dd9d)
    ========================================================= */
 
 :root {
-  --bg-primary: #FFFFFF;
-  --bg-secondary: #F9FAFB;
-  --bg-subtle: #F3F4F6;
-  --bg-hover: #E5E7EB;
+  --bg-primary: #f8f6f3;
+  --bg-secondary: #f2ebe3;
+  --bg-card: #ffffff;
+  --bg-subtle: #eae1d7;
+  --bg-hover: #e2d6c9;
 
-  --border-light: #E5E7EB;
-  --border-dark: #111827;
+  --border-light: #dfd3c6;
+  --border-dark: #936653;
 
-  --text-main: #111827;
-  --text-muted: #6B7280;
-  --text-light: #9CA3AF;
+  --text-main: #936653;
+  --text-dark: #5e3b2e;
+  --text-muted: #a78170;
+  --text-light: #c5a99c;
 
-  --color-black: #000000;
-  --color-white: #FFFFFF;
-  --color-danger: #DC2626;
-  --color-success: #15803D;
+  --color-black: #936653;
+  --color-brown: #936653;
+  --color-brown-dark: #6e4433;
+  --color-white: #f8f6f3;
+  --color-orange: #f9a127;
+  --color-yellow: #f1dd9d;
+  --color-danger: #c53030;
+  --color-success: #2f855a;
 
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
 
   --sidebar-width: 250px;
   --header-height: 56px;
@@ -53,24 +61,23 @@
 }
 
 body {
-  background-color: var(--bg-secondary);
+  background-color: var(--bg-primary);
   color: var(--text-main);
   font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
   overflow-x: hidden;
 }
 
-/* App Shell Layout */
 #app {
   display: flex;
   min-height: 100vh;
+  background-color: var(--bg-primary);
 }
 
-/* Sidebar Navigation (Desktop & iPad Landscape) */
+/* Sidebar Navigation */
 .sidebar {
   width: var(--sidebar-width);
   background-color: var(--color-white);
@@ -88,26 +95,38 @@ body {
 .sidebar-header {
   padding: 20px 20px 16px 20px;
   border-bottom: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.brand-logo-img {
+  height: 54px;
+  width: auto;
+  max-width: 140px;
+  object-fit: contain;
+  margin-bottom: 8px;
+  display: block;
 }
 
 .brand-title {
   font-size: 1.15rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--color-black);
+  color: var(--color-brown);
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .brand-badge {
-  font-size: 0.65rem;
-  font-weight: 600;
+  font-size: 0.68rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  background: var(--color-black);
-  color: var(--color-white);
-  padding: 2px 6px;
+  background: var(--color-orange);
+  color: #ffffff;
+  padding: 2px 7px;
   border-radius: var(--radius-sm);
 }
 
@@ -123,7 +142,7 @@ body {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .nav-item {
@@ -134,19 +153,24 @@ body {
   border-radius: var(--radius-md);
   color: var(--text-main);
   font-size: 0.92rem;
-  font-weight: 500;
+  font-weight: 600;
   text-decoration: none;
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: all 0.15s ease;
   border: 1px solid transparent;
+  background: transparent;
+}
+
+.nav-item svg {
+  stroke: var(--color-brown);
 }
 
 .nav-item:hover {
-  background-color: var(--bg-subtle);
+  background-color: var(--bg-secondary);
 }
 
 .nav-item.active {
-  background-color: var(--color-black);
+  background-color: var(--color-brown);
   color: var(--color-white);
 }
 
@@ -159,6 +183,7 @@ body {
   border-top: 1px solid var(--border-light);
   font-size: 0.78rem;
   color: var(--text-muted);
+  background-color: var(--color-white);
 }
 
 /* Main Content Area */
@@ -168,7 +193,7 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background-color: var(--bg-secondary);
+  background-color: var(--bg-primary);
 }
 
 .main-content {
@@ -184,7 +209,7 @@ body {
   display: none;
   background-color: var(--color-white);
   border-bottom: 1px solid var(--border-light);
-  padding: 12px 16px;
+  padding: 10px 16px;
   position: sticky;
   top: 0;
   z-index: 30;
@@ -215,24 +240,32 @@ body {
   justify-content: center;
   color: var(--text-muted);
   font-size: 0.68rem;
-  font-weight: 500;
+  font-weight: 600;
   text-decoration: none;
   padding: 4px 8px;
   border-radius: var(--radius-sm);
   gap: 2px;
 }
 
-.bottom-nav-item.active {
-  color: var(--color-black);
-  font-weight: 600;
+.bottom-nav-item svg {
+  stroke: var(--text-muted);
 }
 
-/* Typography & Layout Elements */
+.bottom-nav-item.active {
+  color: var(--color-brown);
+  font-weight: 700;
+}
+
+.bottom-nav-item.active svg {
+  stroke: var(--color-brown);
+}
+
+/* Typography */
 h1.page-title {
   font-size: 1.65rem;
   font-weight: 700;
-  letter-spacing: -0.03em;
-  color: var(--color-black);
+  letter-spacing: -0.02em;
+  color: var(--color-brown-dark);
 }
 
 .page-subtitle {
@@ -245,23 +278,24 @@ h1.page-title {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 14px;
 }
 
-/* Minimalist Cards */
+/* Cards */
 .card {
-  background-color: var(--color-white);
+  background-color: var(--bg-card);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   padding: 20px;
+  box-shadow: 0 1px 3px rgba(147, 102, 83, 0.05);
 }
 
 .card-title {
   font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--color-black);
+  font-weight: 700;
+  color: var(--color-brown-dark);
   margin-bottom: 4px;
 }
 
@@ -277,7 +311,7 @@ h1.page-title {
   justify-content: center;
   gap: 8px;
   font-size: 0.9rem;
-  font-weight: 500;
+  font-weight: 600;
   padding: 8px 16px;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -288,8 +322,12 @@ h1.page-title {
   min-height: 38px;
 }
 
+.btn svg {
+  stroke: currentColor;
+}
+
 .btn-sm {
-  padding: 5px 10px;
+  padding: 5px 12px;
   font-size: 0.8rem;
   min-height: 30px;
 }
@@ -297,30 +335,40 @@ h1.page-title {
 .btn-lg {
   padding: 12px 24px;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 700;
   min-height: 48px;
 }
 
 .btn-primary {
-  background-color: var(--color-black);
+  background-color: var(--color-brown);
   color: var(--color-white);
-  border-color: var(--color-black);
+  border-color: var(--color-brown);
 }
 
 .btn-primary:hover {
-  background-color: #27272a;
-  border-color: #27272a;
+  background-color: var(--color-brown-dark);
+  border-color: var(--color-brown-dark);
 }
 
 .btn-secondary {
   background-color: var(--color-white);
-  color: var(--text-main);
+  color: var(--color-brown);
   border-color: var(--border-light);
 }
 
 .btn-secondary:hover {
-  background-color: var(--bg-subtle);
-  border-color: #d1d5db;
+  background-color: var(--bg-secondary);
+  border-color: var(--color-brown);
+}
+
+.btn-accent {
+  background-color: var(--color-orange);
+  color: #ffffff;
+  border-color: var(--color-orange);
+}
+
+.btn-accent:hover {
+  background-color: #e58d17;
 }
 
 .btn-danger {
@@ -346,8 +394,8 @@ h1.page-title {
 .form-label {
   display: block;
   font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--text-main);
+  font-weight: 700;
+  color: var(--color-brown);
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -358,20 +406,22 @@ h1.page-title {
   padding: 9px 12px;
   font-size: 0.92rem;
   font-family: inherit;
-  color: var(--text-main);
+  color: var(--color-brown-dark);
   background-color: var(--color-white);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
   outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .form-input:focus, .form-select:focus, .form-textarea:focus {
-  border-color: var(--color-black);
+  border-color: var(--color-brown);
+  box-shadow: 0 0 0 3px rgba(147, 102, 83, 0.15);
 }
 
 .form-input.number-input {
   font-family: var(--font-mono);
+  font-weight: 600;
 }
 
 /* Tables */
@@ -379,7 +429,7 @@ h1.page-title {
   overflow-x: auto;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  background-color: var(--color-white);
+  background-color: var(--bg-card);
 }
 
 .table {
@@ -390,20 +440,20 @@ h1.page-title {
 }
 
 .table th {
-  background-color: var(--bg-subtle);
+  background-color: var(--bg-secondary);
   padding: 10px 14px;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-muted);
+  color: var(--text-main);
   border-bottom: 1px solid var(--border-light);
 }
 
 .table td {
   padding: 12px 14px;
   border-bottom: 1px solid var(--border-light);
-  color: var(--text-main);
+  color: var(--text-dark);
 }
 
 .table tr:last-child td {
@@ -411,12 +461,13 @@ h1.page-title {
 }
 
 .table tr:hover td {
-  background-color: #fafafa;
+  background-color: var(--bg-primary);
 }
 
 .table td.num {
   font-family: var(--font-mono);
-  font-size: 0.9rem;
+  font-size: 0.92rem;
+  font-weight: 600;
 }
 
 /* Badges */
@@ -425,7 +476,7 @@ h1.page-title {
   align-items: center;
   gap: 4px;
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 700;
   padding: 2px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
@@ -433,10 +484,14 @@ h1.page-title {
   letter-spacing: 0.03em;
 }
 
+.badge svg {
+  stroke: currentColor;
+}
+
 .badge-outline {
   border-color: var(--border-light);
-  color: var(--text-muted);
-  background: transparent;
+  color: var(--color-brown);
+  background: var(--bg-secondary);
 }
 
 .badge-active {
@@ -452,15 +507,20 @@ h1.page-title {
 }
 
 .badge-bundle {
-  background-color: #f3f4f6;
-  color: #111827;
-  border-color: #d1d5db;
+  background-color: var(--color-yellow);
+  color: #6e4433;
+  border-color: #e5cb85;
 }
 
 .badge-warning {
   background-color: #fffbeb;
   color: #b45309;
   border-color: #fde68a;
+}
+
+.badge-accent {
+  background-color: var(--color-orange);
+  color: #ffffff;
 }
 
 /* Modals */
@@ -470,7 +530,7 @@ h1.page-title {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.45);
+  background-color: rgba(94, 59, 46, 0.45);
   backdrop-filter: blur(2px);
   z-index: 100;
   display: flex;
@@ -488,7 +548,7 @@ h1.page-title {
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 10px 25px -5px rgba(94, 59, 46, 0.2);
   overflow: hidden;
 }
 
@@ -498,11 +558,13 @@ h1.page-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  background-color: var(--color-white);
 }
 
 .modal-title {
   font-size: 1.15rem;
   font-weight: 700;
+  color: var(--color-brown-dark);
 }
 
 .modal-body {
@@ -543,7 +605,7 @@ h1.page-title {
 /* POS Specific Layout */
 .pos-layout {
   display: grid;
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: 1fr 400px;
   gap: 20px;
   height: calc(100vh - 110px);
 }
@@ -563,6 +625,7 @@ h1.page-title {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  box-shadow: 0 2px 8px rgba(147, 102, 83, 0.08);
 }
 
 .pos-cart-items {
@@ -584,7 +647,7 @@ h1.page-title {
 }
 
 .product-tap-card {
-  background-color: var(--color-white);
+  background-color: var(--bg-card);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   padding: 14px;
@@ -603,24 +666,26 @@ h1.page-title {
 }
 
 .product-tap-card:hover {
-  border-color: var(--color-black);
+  border-color: var(--color-brown);
+  box-shadow: 0 4px 12px rgba(147, 102, 83, 0.12);
 }
 
 /* Receipt Printout Style */
 .receipt-box {
-  background-color: #fafafa;
+  background-color: var(--color-white);
   border: 1px dashed var(--border-light);
   padding: 20px;
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: 0.85rem;
   line-height: 1.6;
+  color: var(--color-brown-dark);
 }
 
-/* Responsive Breakpoints */
+/* Responsive */
 @media (max-width: 1024px) {
   .pos-layout {
-    grid-template-columns: 1fr 340px;
+    grid-template-columns: 1fr 360px;
   }
 }
 
@@ -654,7 +719,7 @@ h1.page-title {
 
   .pos-cart-panel {
     height: auto;
-    max-height: 480px;
+    max-height: 520px;
     margin-top: 16px;
   }
 
@@ -662,7 +727,6 @@ h1.page-title {
     grid-template-columns: 1fr;
   }
 }
-
 
 
     /* Print thermal receipt styles */
@@ -680,9 +744,10 @@ h1.page-title {
 <body>
 
   <div id="app">
-    <div style="display:flex;height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:#111827;padding:20px;text-align:center;">
-      <div style="font-weight:800;font-size:1.6rem;letter-spacing:-0.03em;">MUKI STALL MANAGER</div>
-      <div style="font-size:0.9rem;color:#6B7280;">正在初始化本地数据库与库存...</div>
+    <div style="display:flex;height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:#936653;padding:20px;text-align:center;background:#f8f6f3;">
+      <img src="Muki.png" alt="Muki" style="height:60px;width:auto;object-fit:contain;margin-bottom:6px;" onerror="this.style.display='none'">
+      <div style="font-weight:800;font-size:1.6rem;letter-spacing:-0.03em;color:#936653;">MUKI STALL MANAGER</div>
+      <div style="font-size:0.9rem;color:#a78170;">正在初始化本地数据库与库存...</div>
     </div>
   </div>
 
@@ -693,7 +758,7 @@ h1.page-title {
 // ==========================================
 /**
  * Formatting and Math Utilities
- * Ensures consistent RM currency display, 2-decimal rounded math, and localized dates.
+ * Consistent RM currency formatting, dates, math rounding, and sequential order numbers.
  */
 
 function round(value, decimals = 2) {
@@ -754,13 +819,16 @@ function generateId(prefix = 'muki') {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 }
 
-function generateOrderNumber() {
+/**
+ * Sequential Order Number Generator
+ * Format: MUKI-YYYYMMDD-00001
+ */
+function generateOrderNumber(sequence = 1) {
   const d = new Date();
   const datePart = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-  const randomPart = Math.floor(1000 + Math.random() * 9000);
-  return `MUK-${datePart}-${randomPart}`;
+  const seqPart = String(sequence).padStart(5, '0');
+  return `MUKI-${datePart}-${seqPart}`;
 }
-
 
 
 // ==========================================
@@ -1518,6 +1586,34 @@ class AppStore {
     return Number(prod.cost) || 0;
   }
 
+  // --- Categories Management ---
+  getCategories() {
+    const defaultCats = ['Mukichip', 'Accessories', 'Stickers', 'Bundles', 'Other'];
+    const custom = this.settings.custom_categories;
+    if (Array.isArray(custom) && custom.length > 0) {
+      return custom;
+    }
+    return defaultCats;
+  }
+
+  async addCategory(name) {
+    const trimmed = (name || '').trim();
+    if (!trimmed) return;
+    const cats = [...this.getCategories()];
+    if (!cats.includes(trimmed)) {
+      cats.push(trimmed);
+      await db.putItem('settings', { key: 'custom_categories', value: cats });
+      await this.refreshAll();
+    }
+  }
+
+  async deleteCategory(name) {
+    let cats = this.getCategories().filter(c => c !== name);
+    if (cats.length === 0) cats = ['Other'];
+    await db.putItem('settings', { key: 'custom_categories', value: cats });
+    await this.refreshAll();
+  }
+
   // --- Cart Management for POS ---
 
   addToCart(productId, quantity = 1) {
@@ -1566,6 +1662,24 @@ class AppStore {
     }
   }
 
+  updateCartItemPrice(productId, newPrice) {
+    const item = this.cart.find(i => i.productId === productId);
+    if (!item) return;
+    const parsed = Math.max(0, round(parseFloat(newPrice) || 0));
+    item.unitPrice = parsed;
+    item.isCustomPrice = true;
+    this.notify('cart', this.cart);
+  }
+
+  setManualDiscount(amount) {
+    this.manualDiscount = Math.max(0, round(parseFloat(amount) || 0));
+    this.notify('cart', this.cart);
+  }
+
+  getManualDiscount() {
+    return this.manualDiscount || 0;
+  }
+
   removeFromCart(productId) {
     this.cart = this.cart.filter(item => item.productId !== productId);
     this.notify('cart', this.cart);
@@ -1573,6 +1687,7 @@ class AppStore {
 
   clearCart() {
     this.cart = [];
+    this.manualDiscount = 0;
     this.notify('cart', this.cart);
   }
 }
@@ -1959,7 +2074,7 @@ let isProcessingOrder = false;
 /**
  * Process a new sale from the POS cart
  */
-async function createOrder({ cartItems, paymentMethod = 'Cash', promotion = null, customDiscount = 0 }) {
+async function createOrder({ cartItems, paymentMethod = 'Cash', paymentNotes = '', promotion = null, customDiscount = 0 }) {
   if (isProcessingOrder) {
     throw new Error('An order is already being processed. Please wait.');
   }
@@ -1974,7 +2089,24 @@ async function createOrder({ cartItems, paymentMethod = 'Cash', promotion = null
     const timestamp = new Date().toISOString();
     const orderDate = getTodayDateString();
     const orderId = generateId('ord');
-    const orderNumber = generateOrderNumber();
+
+    // Calculate sequential order number for today: MUKI-YYYYMMDD-00001
+    const d = new Date();
+    const datePart = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    const todayOrders = (store.orders || []).filter(o => o.date === orderDate);
+    let nextSeq = 1;
+    todayOrders.forEach(o => {
+      if (o.order_number && o.order_number.startsWith(`MUKI-${datePart}-`)) {
+        const parts = o.order_number.split('-');
+        const seq = parseInt(parts[2], 10);
+        if (!isNaN(seq) && seq >= nextSeq) {
+          nextSeq = seq + 1;
+        }
+      } else {
+        nextSeq = Math.max(nextSeq, todayOrders.length + 1);
+      }
+    });
+    const orderNumber = generateOrderNumber(nextSeq);
 
     // 1. Snapshot items with current price and current cost
     let subtotal = 0;
@@ -2022,6 +2154,11 @@ async function createOrder({ cartItems, paymentMethod = 'Cash', promotion = null
       await incrementPromotionUsage(promotion.id);
     }
 
+    let finalPaymentMethod = paymentMethod;
+    if (paymentMethod === 'Other' && paymentNotes) {
+      finalPaymentMethod = `Other (${paymentNotes})`;
+    }
+
     // 5. Build and save order snapshot
     const order = {
       id: orderId,
@@ -2034,7 +2171,9 @@ async function createOrder({ cartItems, paymentMethod = 'Cash', promotion = null
       final_amount: finalAmount,
       total_cost: totalCogs,
       gross_profit: grossProfit,
-      payment_method: paymentMethod,
+      payment_method: finalPaymentMethod,
+      payment_channel: paymentMethod,
+      payment_notes: paymentNotes || '',
       promotion_snapshot: promotion ? {
         id: promotion.id,
         name: promotion.name,
@@ -2359,6 +2498,249 @@ function triggerFileDownload(blob, filename) {
 
 
 // ==========================================
+// Module: Muki Stall Manager/js/services/githubSync.js
+// ==========================================
+/**
+ * GitHub Gist Cloud Sync Service
+ * Allows solo stall owners to sync data between iPad and computer with 1 click.
+ * Stores data safely in a private/secret GitHub Gist using the user's existing GitHub account.
+ */
+
+
+
+
+
+const GIST_FILENAME = 'muki-stall-data.json';
+const GIST_DESCRIPTION = 'Muki Stall Manager — Business Data Cloud Backup (Private)';
+
+/**
+ * Retrieve saved GitHub credentials from settings
+ */
+async function getGitHubConfig() {
+  const settings = await db.getAll('settings');
+  const tokenSetting = settings.find(s => s.key === 'github_token');
+  const gistIdSetting = settings.find(s => s.key === 'github_gist_id');
+  const lastUploadSetting = settings.find(s => s.key === 'github_last_upload');
+  const lastPullSetting = settings.find(s => s.key === 'github_last_pull');
+
+  return {
+    token: tokenSetting ? tokenSetting.value : '',
+    gistId: gistIdSetting ? gistIdSetting.value : '',
+    lastUpload: lastUploadSetting ? lastUploadSetting.value : null,
+    lastPull: lastPullSetting ? lastPullSetting.value : null
+  };
+}
+
+/**
+ * Save GitHub Token
+ */
+async function saveGitHubToken(token) {
+  const cleaned = (token || '').trim();
+  await db.putItem('settings', { key: 'github_token', value: cleaned });
+  await store.refreshAll();
+  return cleaned;
+}
+
+/**
+ * Test GitHub token connection
+ */
+async function testGitHubToken(token) {
+  if (!token) throw new Error('请输入 GitHub Token');
+
+  const res = await fetch('https://api.github.com/user', {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.github+json'
+    }
+  });
+
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('Token 无效或已过期，请检查是否完整复制。');
+    throw new Error(`GitHub 连接失败: HTTP ${res.status}`);
+  }
+
+  const user = await res.json();
+  return user.login; // e.g. "yuxuan705"
+}
+
+/**
+ * Upload current stall data to GitHub Secret Gist
+ */
+async function uploadToGitHub() {
+  const config = await getGitHubConfig();
+  if (!config.token) {
+    throw new Error('未配置 GitHub Token，请先在下方输入 Token。');
+  }
+
+  // 1. Prepare current full database backup
+  const backup = await createBackupData();
+  const backupJsonString = JSON.stringify(backup, null, 2);
+
+  let gistId = config.gistId;
+
+  // 2. If no gistId stored, check if a Muki gist already exists under user's account
+  if (!gistId) {
+    try {
+      const gistsRes = await fetch('https://api.github.com/gists?per_page=50', {
+        headers: {
+          'Authorization': `Bearer ${config.token}`,
+          'Accept': 'application/vnd.github+json'
+        }
+      });
+
+      if (gistsRes.ok) {
+        const gists = await gistsRes.json();
+        const existing = gists.find(g => g.files && g.files[GIST_FILENAME]);
+        if (existing) {
+          gistId = existing.id;
+          await db.putItem('settings', { key: 'github_gist_id', value: gistId });
+        }
+      }
+    } catch (e) {
+      console.warn('Gist lookup warning:', e);
+    }
+  }
+
+  // 3. Create new secret Gist or Update existing Gist
+  let response;
+  if (!gistId) {
+    // Create new Secret Gist
+    response = await fetch('https://api.github.com/gists', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.token}`,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        description: GIST_DESCRIPTION,
+        public: false, // Secret Gist, completely private
+        files: {
+          [GIST_FILENAME]: {
+            content: backupJsonString
+          }
+        }
+      })
+    });
+  } else {
+    // Update existing Gist
+    response = await fetch(`https://api.github.com/gists/${gistId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${config.token}`,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        description: GIST_DESCRIPTION,
+        files: {
+          [GIST_FILENAME]: {
+            content: backupJsonString
+          }
+        }
+      })
+    });
+  }
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    throw new Error(errorBody.message || `上传失败: HTTP ${response.status}`);
+  }
+
+  const resultGist = await response.json();
+  const now = new Date().toISOString();
+
+  // Save gist ID and last upload timestamp
+  await db.putItem('settings', { key: 'github_gist_id', value: resultGist.id });
+  await db.putItem('settings', { key: 'github_last_upload', value: now });
+  await store.refreshAll();
+
+  return {
+    gistId: resultGist.id,
+    timestamp: now,
+    summary: backup.meta.summary
+  };
+}
+
+/**
+ * Pull latest data from GitHub Secret Gist and restore
+ */
+async function pullFromGitHub() {
+  const config = await getGitHubConfig();
+  if (!config.token) {
+    throw new Error('未配置 GitHub Token，请先在下方输入 Token。');
+  }
+
+  let gistId = config.gistId;
+
+  // If no gistId, find it on GitHub
+  if (!gistId) {
+    const gistsRes = await fetch('https://api.github.com/gists?per_page=50', {
+      headers: {
+        'Authorization': `Bearer ${config.token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+
+    if (!gistsRes.ok) {
+      throw new Error(`获取 GitHub 数据失败: HTTP ${gistsRes.status}`);
+    }
+
+    const gists = await gistsRes.json();
+    const existing = gists.find(g => g.files && g.files[GIST_FILENAME]);
+    if (!existing) {
+      throw new Error('在你的 GitHub 上未找到名为 muki-stall-data.json 的备份，请先在 iPad 上点击一次“上传同步”。');
+    }
+
+    gistId = existing.id;
+    await db.putItem('settings', { key: 'github_gist_id', value: gistId });
+  }
+
+  // Fetch Gist details
+  const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+    headers: {
+      'Authorization': `Bearer ${config.token}`,
+      'Accept': 'application/vnd.github+json'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`拉取 GitHub Gist 失败: HTTP ${response.status}`);
+  }
+
+  const gistData = await response.json();
+  const fileEntry = gistData.files && gistData.files[GIST_FILENAME];
+  if (!fileEntry || !fileEntry.content) {
+    throw new Error('GitHub 备份文件内容为空或已被移除。');
+  }
+
+  // Parse and validate content
+  let parsed;
+  try {
+    parsed = JSON.parse(fileEntry.content);
+  } catch (err) {
+    throw new Error('GitHub 备份数据损坏，无法解析为 JSON。');
+  }
+
+  const validated = validateBackupFile(parsed);
+
+  // Restore data
+  await restoreFromBackup(parsed, 'replace');
+
+  const now = new Date().toISOString();
+  await db.putItem('settings', { key: 'github_last_pull', value: now });
+  await store.refreshAll();
+
+  return {
+    timestamp: now,
+    meta: parsed.meta || {},
+    counts: validated.counts
+  };
+}
+
+
+
+// ==========================================
 // Module: Muki Stall Manager/js/utils/testScenarios.js
 // ==========================================
 /**
@@ -2607,6 +2989,7 @@ async function runAllTests() {
 
 
 
+
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
   { id: 'pos', label: 'Sales / POS', icon: 'pos' },
@@ -2632,6 +3015,7 @@ function renderSidebar(currentView) {
   return `
     <aside class="sidebar">
       <div class="sidebar-header">
+        <img src="Muki.png" alt="Muki Logo" class="brand-logo-img" onerror="this.style.display='none'">
         <div class="brand-title">
           <span>MUKI</span>
           <span class="brand-badge">POS</span>
@@ -2657,12 +3041,19 @@ function renderTopHeader(currentView) {
   return `
     <header class="top-header">
       <div style="display:flex;align-items:center;gap:10px;">
+        <img src="Muki.png" alt="Muki" style="height:30px;width:auto;object-fit:contain;" onerror="this.style.display='none'">
         <span style="font-weight:700;font-size:1.05rem;">Muki Stall</span>
         <span style="font-size:0.8rem;color:var(--text-muted);border-left:1px solid var(--border-light);padding-left:10px;">
           ${currentItem.label}
         </span>
       </div>
       <div style="display:flex;gap:8px;">
+        ${store.settings?.github_token ? `
+          <button type="button" class="btn btn-sm btn-secondary" data-action="quick-github-upload" title="摊位收摊：一键同步上传到 GitHub">
+            ${renderIcon('upload', 14)}
+            <span>同步上传</span>
+          </button>
+        ` : ''}
         <button type="button" class="btn btn-sm btn-secondary" data-action="quick-pos">
           ${renderIcon('pos', 14)}
           <span>POS</span>
@@ -2905,7 +3296,8 @@ function renderDashboard() {
 // ==========================================
 /**
  * Point of Sale (POS) Component
- * High-speed, touch-optimized stall checkout interface with promotion engine and stock validation.
+ * Touch-optimized stall checkout with dynamic categories, editable prices, custom discount input,
+ * expanded payment methods (Cash, DuitNow QR, TnG, Other with description), and brand theme.
  */
 
 
@@ -2917,13 +3309,15 @@ let activeCategoryFilter = 'All';
 let searchQuery = '';
 let selectedPromotionId = '';
 let selectedPaymentMethod = 'Cash';
+let otherPaymentNote = '';
 
 function getPosState() {
   return {
     category: activeCategoryFilter,
     search: searchQuery,
     promoId: selectedPromotionId,
-    paymentMethod: selectedPaymentMethod
+    paymentMethod: selectedPaymentMethod,
+    otherNote: otherPaymentNote
   };
 }
 
@@ -2941,17 +3335,25 @@ function setPosPromotion(promoId) {
 
 function setPosPaymentMethod(method) {
   selectedPaymentMethod = method;
+  if (method !== 'Other') {
+    otherPaymentNote = '';
+  }
+}
+
+function setPosOtherNote(note) {
+  otherPaymentNote = (note || '').trim();
 }
 
 function renderPos() {
-  const categories = ['All', 'Mukichip', 'Accessories', 'Stickers', 'Bundles', 'Other'];
+  const dynamicCategories = store.getCategories();
+  const categories = ['All', ...dynamicCategories];
 
   // Filter products: active products only
   let filteredProducts = store.products.filter(p => p.is_active !== false);
 
   if (activeCategoryFilter !== 'All') {
     if (activeCategoryFilter === 'Bundles') {
-      filteredProducts = filteredProducts.filter(p => p.category === 'Bundle' || store.isBundleProduct(p.id));
+      filteredProducts = filteredProducts.filter(p => p.category === 'Bundle' || p.category === 'Bundles' || store.isBundleProduct(p.id));
     } else {
       filteredProducts = filteredProducts.filter(p => p.category === activeCategoryFilter);
     }
@@ -2975,19 +3377,21 @@ function renderPos() {
   const activePromos = store.promotions.filter(p => isPromotionValid(p));
   const currentPromo = activePromos.find(p => p.id === selectedPromotionId) || null;
 
-  // Calculate discount
-  let discount = 0;
+  // Calculate promo discount + manual discount
+  let promoDiscount = 0;
   if (currentPromo) {
-    discount = calculatePromotionDiscount(currentPromo, store.cart, cartSubtotal);
+    promoDiscount = calculatePromotionDiscount(currentPromo, store.cart, cartSubtotal);
   }
-  const finalTotal = round(Math.max(0, cartSubtotal - discount));
+  const manualDiscount = store.getManualDiscount();
+  const totalDiscount = round(promoDiscount + manualDiscount);
+  const finalTotal = round(Math.max(0, cartSubtotal - totalDiscount));
 
   return `
     <div class="pos-layout">
       <!-- Left: Product Catalog Grid -->
       <div class="pos-catalog">
         <!-- Search and Category Filters -->
-        <div style="margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+        <div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
           <div style="flex:1;min-width:200px;position:relative;">
             <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-light);pointer-events:none;">
               ${renderIcon('search', 16)}
@@ -2995,11 +3399,11 @@ function renderPos() {
             <input type="text" 
               id="pos-search-input" 
               class="form-input" 
-              placeholder="Search products..." 
+              placeholder="搜索商品名称..." 
               value="${searchQuery}" 
               style="padding-left:34px;">
           </div>
-          <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;max-width:100%;">
+          <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;max-width:100%;align-items:center;">
             ${categories.map(cat => `
               <button type="button" 
                 class="btn btn-sm ${activeCategoryFilter === cat ? 'btn-primary' : 'btn-secondary'}" 
@@ -3009,6 +3413,11 @@ function renderPos() {
                 ${cat}
               </button>
             `).join('')}
+            
+            <button type="button" class="btn btn-sm btn-secondary" data-action="open-manage-categories-modal" title="增删商品分类" style="border-radius:20px;border-style:dashed;padding:4px 10px;white-space:nowrap;">
+              ${renderIcon('plus', 12)}
+              <span>分类</span>
+            </button>
           </div>
         </div>
 
@@ -3017,7 +3426,7 @@ function renderPos() {
           ${filteredProducts.length === 0 ? `
             <div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--text-muted);">
               ${renderIcon('package', 36, 'style="opacity:0.4;margin-bottom:8px;"')}
-              <div>No products found matching filters.</div>
+              <div>未找到匹配商品</div>
             </div>
           ` : filteredProducts.map(prod => {
             const isBundle = store.isBundleProduct(prod.id);
@@ -3035,25 +3444,25 @@ function renderPos() {
                 <div>
                   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:4px;">
                     <span class="badge badge-outline" style="font-size:0.65rem;">${prod.category}</span>
-                    ${isBundle ? `<span class="badge badge-bundle" style="font-size:0.65rem;">Bundle</span>` : ''}
+                    ${isBundle ? `<span class="badge badge-bundle" style="font-size:0.65rem;">套餐</span>` : ''}
                   </div>
-                  <div style="font-weight:700;font-size:0.95rem;color:var(--color-black);line-height:1.25;margin-top:4px;">
+                  <div style="font-weight:700;font-size:0.95rem;color:var(--color-brown-dark);line-height:1.25;margin-top:4px;">
                     ${prod.name}
                   </div>
                 </div>
 
                 <div style="margin-top:12px;">
-                  <div style="font-size:1.15rem;font-weight:700;font-family:var(--font-mono);color:var(--color-black);">
+                  <div style="font-size:1.15rem;font-weight:700;font-family:var(--font-mono);color:var(--color-brown);">
                     ${formatRM(prod.selling_price)}
                   </div>
                   
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:0.75rem;">
-                    <span style="color:${isOut ? 'var(--color-danger)' : available <= 5 ? '#b45309' : 'var(--text-muted)'};font-weight:500;">
-                      ${isOut ? 'Out of Stock' : `${available} ${isBundle ? 'sets' : 'in stock'}`}
+                    <span style="color:${isOut ? 'var(--color-danger)' : available <= 5 ? 'var(--color-orange)' : 'var(--text-muted)'};font-weight:600;">
+                      ${isOut ? '缺货' : `${available} ${isBundle ? '套' : '件'}`}
                     </span>
                     ${cartQty > 0 ? `
-                      <span class="badge" style="background:var(--color-black);color:white;padding:2px 7px;">
-                        ${cartQty} in cart
+                      <span class="badge" style="background:var(--color-brown);color:white;padding:2px 7px;">
+                        已加 ${cartQty}
                       </span>
                     ` : ''}
                   </div>
@@ -3069,12 +3478,12 @@ function renderPos() {
         <div style="padding:14px 16px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center;">
           <div style="display:flex;align-items:center;gap:8px;">
             ${renderIcon('pos', 18)}
-            <span style="font-weight:700;font-size:1rem;">Current Sale</span>
+            <span style="font-weight:700;font-size:1rem;color:var(--color-brown-dark);">当前购物车</span>
           </div>
           ${store.cart.length > 0 ? `
             <button type="button" class="btn btn-sm btn-secondary" data-action="pos-clear-cart" style="color:var(--color-danger);">
               ${renderIcon('trash', 14)}
-              <span>Clear</span>
+              <span>清空</span>
             </button>
           ` : ''}
         </div>
@@ -3084,45 +3493,55 @@ function renderPos() {
           ${store.cart.length === 0 ? `
             <div style="text-align:center;padding:60px 10px;color:var(--text-muted);">
               ${renderIcon('pos', 36, 'style="opacity:0.3;margin-bottom:12px;"')}
-              <div style="font-weight:600;">Cart is empty</div>
-              <div style="font-size:0.8rem;margin-top:4px;">Tap any product to add to cart</div>
+              <div style="font-weight:600;">购物车为空</div>
+              <div style="font-size:0.8rem;margin-top:4px;">点击左侧商品卡片即可点单</div>
             </div>
           ` : store.cart.map(item => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);">
-              <div style="flex:1;padding-right:10px;">
-                <div style="font-weight:600;font-size:0.9rem;color:var(--color-black);">${item.product?.name || item.name}</div>
-                <div style="font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);">
-                  ${formatRM(item.unitPrice)} each
+            <div style="display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div style="flex:1;padding-right:8px;">
+                  <div style="font-weight:700;font-size:0.92rem;color:var(--color-brown-dark);">${item.product?.name || item.name}</div>
+                  
+                  <!-- Editable Price on the fly -->
+                  <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+                    <span style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">单价 RM</span>
+                    <input type="number" step="0.10" class="form-input number-input cart-item-price-input" 
+                      data-product-id="${item.productId}" 
+                      value="${item.unitPrice}" 
+                      title="点击可直接修改此项售价(临时优惠)"
+                      style="width:78px;padding:2px 6px;font-size:0.85rem;height:26px;border-color:${item.isCustomPrice ? 'var(--color-orange)' : 'var(--border-light)'};background:#fff;">
+                    ${item.isCustomPrice ? '<span class="badge badge-bundle" style="font-size:0.65rem;padding:1px 5px;">临时改价</span>' : ''}
+                  </div>
                 </div>
-              </div>
 
-              <!-- Qty stepper -->
-              <div style="display:flex;align-items:center;gap:6px;">
-                <button type="button" class="btn btn-sm btn-secondary" style="width:28px;height:28px;padding:0;" data-action="pos-qty-minus" data-product-id="${item.productId}">
-                  ${renderIcon('minus', 12)}
-                </button>
-                <span style="font-family:var(--font-mono);font-weight:700;font-size:0.95rem;width:24px;text-align:center;">
-                  ${item.quantity}
-                </span>
-                <button type="button" class="btn btn-sm btn-secondary" style="width:28px;height:28px;padding:0;" data-action="pos-qty-plus" data-product-id="${item.productId}">
-                  ${renderIcon('plus', 12)}
-                </button>
-              </div>
+                <!-- Qty stepper -->
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <button type="button" class="btn btn-sm btn-secondary" style="width:28px;height:28px;padding:0;" data-action="pos-qty-minus" data-product-id="${item.productId}">
+                    ${renderIcon('minus', 12)}
+                  </button>
+                  <span style="font-family:var(--font-mono);font-weight:700;font-size:0.95rem;width:24px;text-align:center;">
+                    ${item.quantity}
+                  </span>
+                  <button type="button" class="btn btn-sm btn-secondary" style="width:28px;height:28px;padding:0;" data-action="pos-qty-plus" data-product-id="${item.productId}">
+                    ${renderIcon('plus', 12)}
+                  </button>
+                </div>
 
-              <div style="width:75px;text-align:right;font-family:var(--font-mono);font-weight:700;font-size:0.92rem;">
-                ${formatRM(item.unitPrice * item.quantity)}
+                <div style="width:75px;text-align:right;font-family:var(--font-mono);font-weight:700;font-size:0.95rem;color:var(--color-brown-dark);margin-left:8px;">
+                  ${formatRM(item.unitPrice * item.quantity)}
+                </div>
               </div>
             </div>
           `).join('')}
         </div>
 
         <!-- Checkout Summary & Action Footer -->
-        <div style="padding:16px;border-top:1px solid var(--border-light);background-color:var(--color-white);">
+        <div style="padding:14px 16px;border-top:1px solid var(--border-light);background-color:var(--color-white);">
           <!-- Promotion Selector -->
-          <div style="margin-bottom:12px;">
-            <label class="form-label" style="font-size:0.75rem;margin-bottom:4px;">Bundle / Promotion</label>
-            <select id="pos-promo-select" class="form-select" style="font-size:0.85rem;padding:6px 10px;">
-              <option value="">No promotion applied</option>
+          <div style="margin-bottom:8px;">
+            <label class="form-label" style="font-size:0.72rem;margin-bottom:3px;">套餐 / 预设促销</label>
+            <select id="pos-promo-select" class="form-select" style="font-size:0.82rem;padding:5px 8px;">
+              <option value="">不使用预设套餐</option>
               ${activePromos.map(p => `
                 <option value="${p.id}" ${selectedPromotionId === p.id ? 'selected' : ''}>
                   ${p.name} (${p.type === 'bundle_price' ? `RM${p.price}` : p.type === 'fixed_discount' ? `-RM${p.value}` : `-${p.value}%`})
@@ -3131,40 +3550,80 @@ function renderPos() {
             </select>
           </div>
 
+          <!-- Manual Order Discount (减多少) -->
+          <div style="margin-bottom:12px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:8px 10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+              <label class="form-label" style="font-size:0.72rem;margin-bottom:0;display:flex;align-items:center;gap:4px;">
+                ${renderIcon('tag', 13)}
+                <span>整单临时减免 / 立减 (减多少)</span>
+              </label>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="font-family:var(--font-mono);font-weight:700;color:var(--color-brown);font-size:0.85rem;">立减 RM</span>
+              <input type="number" step="0.50" id="pos-manual-discount-input" class="form-input number-input" 
+                placeholder="0.00" 
+                value="${store.getManualDiscount() > 0 ? store.getManualDiscount() : ''}" 
+                style="padding:3px 8px;font-size:0.9rem;font-weight:700;flex:1;background:#fff;height:30px;">
+              ${store.getManualDiscount() > 0 ? `
+                <button type="button" class="btn btn-sm btn-secondary" id="pos-clear-manual-discount-btn" style="padding:2px 8px;font-size:0.75rem;height:30px;">
+                  清除
+                </button>
+              ` : ''}
+            </div>
+          </div>
+
           <!-- Numbers Breakdown -->
-          <div style="display:flex;flex-direction:column;gap:6px;font-size:0.88rem;margin-bottom:14px;">
+          <div style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;margin-bottom:12px;">
             <div style="display:flex;justify-content:space-between;color:var(--text-muted);">
-              <span>Subtotal</span>
+              <span>商品小计</span>
               <span class="num">${formatRM(cartSubtotal)}</span>
             </div>
-            ${discount > 0 ? `
+            ${promoDiscount > 0 ? `
               <div style="display:flex;justify-content:space-between;color:var(--color-success);font-weight:600;">
-                <span>Promotion Discount</span>
-                <span class="num">- ${formatRM(discount)}</span>
+                <span>套餐优惠 (${currentPromo.name})</span>
+                <span class="num">- ${formatRM(promoDiscount)}</span>
               </div>
             ` : ''}
-            <div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:8px;border-top:1px dashed var(--border-light);">
-              <span style="font-weight:700;font-size:1.05rem;">Total Payable</span>
-              <span class="num" style="font-size:1.45rem;font-weight:800;color:var(--color-black);">
+            ${manualDiscount > 0 ? `
+              <div style="display:flex;justify-content:space-between;color:var(--color-orange);font-weight:700;">
+                <span>临时立减优惠</span>
+                <span class="num">- ${formatRM(manualDiscount)}</span>
+              </div>
+            ` : ''}
+            <div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:6px;border-top:1px dashed var(--border-light);">
+              <span style="font-weight:700;font-size:1rem;color:var(--color-brown-dark);">应付总额</span>
+              <span class="num" style="font-size:1.45rem;font-weight:800;color:var(--color-brown);">
                 ${formatRM(finalTotal)}
               </span>
             </div>
           </div>
 
-          <!-- Payment Method Selector -->
-          <div style="margin-bottom:14px;">
-            <label class="form-label" style="font-size:0.75rem;margin-bottom:6px;">Payment Method</label>
-            <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:6px;">
-              ${['Cash', 'DuitNow QR', 'Other'].map(pm => `
+          <!-- Payment Method Selector: Cash, DuitNow QR, TnG, Other -->
+          <div style="margin-bottom:12px;">
+            <label class="form-label" style="font-size:0.72rem;margin-bottom:4px;">支付方式</label>
+            <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:6px;">
+              ${['Cash', 'DuitNow QR', 'TnG', 'Other'].map(pm => `
                 <button type="button" 
                   class="btn btn-sm ${selectedPaymentMethod === pm ? 'btn-primary' : 'btn-secondary'}"
                   data-action="pos-payment-method"
                   data-method="${pm}"
-                  style="font-size:0.82rem;font-weight:600;padding:6px 4px;">
-                  ${pm}
+                  style="font-size:0.8rem;font-weight:700;padding:6px 2px;white-space:nowrap;">
+                  ${pm === 'DuitNow QR' ? 'DuitNow' : pm}
                 </button>
               `).join('')}
             </div>
+
+            <!-- Optional Description for "Other" payment method -->
+            ${selectedPaymentMethod === 'Other' ? `
+              <div style="margin-top:8px;">
+                <input type="text" 
+                  id="pos-other-payment-input" 
+                  class="form-input" 
+                  placeholder="支付方式备注 (例如: 转账/刷卡/挂账...)" 
+                  value="${otherPaymentNote}" 
+                  style="font-size:0.82rem;padding:5px 8px;background:#fff;border-color:var(--color-orange);">
+              </div>
+            ` : ''}
           </div>
 
           <!-- Checkout Button -->
@@ -3172,17 +3631,16 @@ function renderPos() {
             id="pos-confirm-btn"
             class="btn btn-primary btn-lg" 
             data-action="pos-complete-sale" 
-            style="width:100%;font-size:1.05rem;"
+            style="width:100%;font-size:1.02rem;"
             ${store.cart.length === 0 ? 'disabled' : ''}>
             ${renderIcon('check', 18)}
-            <span>Charge ${formatRM(finalTotal)} (${selectedPaymentMethod})</span>
+            <span>收款 ${formatRM(finalTotal)} (${selectedPaymentMethod === 'Other' && otherPaymentNote ? `Other: ${otherPaymentNote}` : selectedPaymentMethod})</span>
           </button>
         </div>
       </div>
     </div>
   `;
 }
-
 
 
 // ==========================================
@@ -3356,7 +3814,7 @@ function renderDailyRecords() {
   let dayGrossProfit = 0;
   let dayItemsSold = 0;
   let productBreakdown = {}; // { [prodName]: { qty, revenue, profit } }
-  let paymentBreakdown = { Cash: 0, 'DuitNow QR': 0, Other: 0 };
+  let paymentBreakdown = { Cash: 0, 'DuitNow QR': 0, TnG: 0, Other: 0 };
   let promoBreakdown = {}; // { [promoName]: count }
 
   completedOrders.forEach(o => {
@@ -3364,7 +3822,13 @@ function renderDailyRecords() {
     dayCogs += Number(o.total_cost) || 0;
     dayGrossProfit += Number(o.gross_profit) || 0;
 
-    const pm = o.payment_method || 'Other';
+    let pm = o.payment_channel;
+    if (!pm) {
+      if (o.payment_method?.startsWith('Cash')) pm = 'Cash';
+      else if (o.payment_method?.startsWith('DuitNow')) pm = 'DuitNow QR';
+      else if (o.payment_method?.startsWith('TnG')) pm = 'TnG';
+      else pm = 'Other';
+    }
     paymentBreakdown[pm] = (paymentBreakdown[pm] || 0) + (Number(o.final_amount) || 0);
 
     if (o.promotion_snapshot && o.promotion_snapshot.name) {
@@ -3545,18 +4009,22 @@ function renderDailyRecords() {
               <div style="font-size:0.78rem;font-weight:600;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;">
                 Payment Channels
               </div>
-              <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:10px;">
+              <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:8px;">
                 <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px;">
                   <div style="font-size:0.75rem;color:var(--text-muted);">Cash</div>
-                  <div class="num" style="font-size:1.1rem;font-weight:700;margin-top:2px;">${formatRM(paymentBreakdown.Cash || 0)}</div>
+                  <div class="num" style="font-size:1.05rem;font-weight:700;margin-top:2px;color:var(--color-brown);">${formatRM(paymentBreakdown.Cash || 0)}</div>
                 </div>
                 <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px;">
-                  <div style="font-size:0.75rem;color:var(--text-muted);">DuitNow QR</div>
-                  <div class="num" style="font-size:1.1rem;font-weight:700;margin-top:2px;">${formatRM(paymentBreakdown['DuitNow QR'] || 0)}</div>
+                  <div style="font-size:0.75rem;color:var(--text-muted);">DuitNow</div>
+                  <div class="num" style="font-size:1.05rem;font-weight:700;margin-top:2px;color:var(--color-brown);">${formatRM(paymentBreakdown['DuitNow QR'] || 0)}</div>
+                </div>
+                <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px;">
+                  <div style="font-size:0.75rem;color:var(--text-muted);">TnG</div>
+                  <div class="num" style="font-size:1.05rem;font-weight:700;margin-top:2px;color:var(--color-brown);">${formatRM(paymentBreakdown.TnG || 0)}</div>
                 </div>
                 <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px;">
                   <div style="font-size:0.75rem;color:var(--text-muted);">Other</div>
-                  <div class="num" style="font-size:1.1rem;font-weight:700;margin-top:2px;">${formatRM(paymentBreakdown.Other || 0)}</div>
+                  <div class="num" style="font-size:1.05rem;font-weight:700;margin-top:2px;color:var(--color-brown);">${formatRM(paymentBreakdown.Other || 0)}</div>
                 </div>
               </div>
             </div>
@@ -4031,7 +4499,7 @@ function renderExpenses() {
 // ==========================================
 /**
  * Products & Settings View Component
- * Add/edit products, manage categories, edit costs with historical cost change logs, and enable/disable items.
+ * Add/edit products, dynamic categories management, cost changes, and enable/disable items.
  */
 
 
@@ -4052,13 +4520,17 @@ function renderProducts() {
     <div>
       <div class="page-header-row">
         <div>
-          <h1 class="page-title">Products & Cost Management</h1>
-          <div class="page-subtitle">Configure prices, supplier costs, categories, and review historical cost audits</div>
+          <h1 class="page-title">商品与成本管理</h1>
+          <div class="page-subtitle">配置商品售价、供应商成本、分类标签与历史调价记录</div>
         </div>
         <div style="display:flex;gap:10px;">
+          <button type="button" class="btn btn-secondary" data-action="open-manage-categories-modal">
+            ${renderIcon('tag', 16)}
+            <span>分类管理</span>
+          </button>
           <button type="button" class="btn btn-primary" data-action="open-add-product-modal">
             ${renderIcon('plus', 16)}
-            <span>Add New Product</span>
+            <span>添加新商品</span>
           </button>
         </div>
       </div>
@@ -4070,14 +4542,14 @@ function renderProducts() {
           data-action="products-tab" 
           data-tab="list">
           ${renderIcon('package', 15)}
-          <span>All Products (${products.length})</span>
+          <span>全部商品 (${products.length})</span>
         </button>
         <button type="button" 
           class="btn btn-sm ${activeProductsTab === 'costs' ? 'btn-primary' : 'btn-secondary'}" 
           data-action="products-tab" 
           data-tab="costs">
           ${renderIcon('expenses', 15)}
-          <span>Cost Change History Log (${costHistory.length})</span>
+          <span>成本调价日志 (${costHistory.length})</span>
         </button>
       </div>
 
@@ -4093,14 +4565,14 @@ function renderProductList(products) {
         <table class="table">
           <thead>
             <tr>
-              <th>Product</th>
-              <th>Category</th>
-              <th style="text-align:right;">Selling Price</th>
-              <th style="text-align:right;">Unit Cost</th>
-              <th style="text-align:right;">Physical Stock</th>
-              <th style="text-align:center;">Type</th>
-              <th style="text-align:center;">Status</th>
-              <th style="text-align:right;">Actions</th>
+              <th>商品名称</th>
+              <th>分类</th>
+              <th style="text-align:right;">当前售价</th>
+              <th style="text-align:right;">单位成本</th>
+              <th style="text-align:right;">物理库存</th>
+              <th style="text-align:center;">类型</th>
+              <th style="text-align:center;">状态</th>
+              <th style="text-align:right;">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -4115,39 +4587,39 @@ function renderProductList(products) {
                       ${p.image ? `<img src="${p.image}" alt="" style="width:28px;height:28px;border-radius:4px;object-fit:cover;border:1px solid var(--border-light);">` : ''}
                       <div>
                         <div>${p.name}</div>
-                        ${p.needs_config ? `<span class="badge badge-warning" style="margin-top:2px;">Needs Configuration</span>` : ''}
+                        ${p.needs_config ? `<span class="badge badge-warning" style="margin-top:2px;">待配置</span>` : ''}
                       </div>
                     </div>
                   </td>
                   <td><span class="badge badge-outline">${p.category}</span></td>
-                  <td class="num" style="text-align:right;font-weight:700;color:var(--color-black);">
+                  <td class="num" style="text-align:right;font-weight:700;color:var(--color-brown);">
                     ${formatRM(p.selling_price)}
                   </td>
                   <td class="num" style="text-align:right;color:var(--text-muted);">
                     ${formatRM(computedCost)}
                   </td>
                   <td class="num" style="text-align:right;">
-                    ${isBundle ? '<span style="color:var(--text-light);font-size:0.8rem;">(Recipe)</span>' : (Number(p.stock) || 0)}
+                    ${isBundle ? '<span style="color:var(--text-light);font-size:0.8rem;">(配方换算)</span>' : (Number(p.stock) || 0)}
                   </td>
                   <td style="text-align:center;">
                     ${isBundle 
-                      ? `<span class="badge badge-bundle">Bundle</span>` 
-                      : `<span class="badge" style="background:#f3f4f6;">Single</span>`}
+                      ? `<span class="badge badge-bundle">组合套餐</span>` 
+                      : `<span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);">单品</span>`}
                   </td>
                   <td style="text-align:center;">
                     ${p.is_active !== false 
-                      ? `<span class="badge badge-active">Active</span>` 
-                      : `<span class="badge badge-cancelled">Disabled</span>`}
+                      ? `<span class="badge badge-active">在售</span>` 
+                      : `<span class="badge badge-cancelled">停售</span>`}
                   </td>
                   <td style="text-align:right;white-space:nowrap;">
-                    <button type="button" class="btn btn-sm btn-secondary" data-action="quick-edit-cost" data-product-id="${p.id}" title="Change Unit Cost">
-                      Update Cost
+                    <button type="button" class="btn btn-sm btn-secondary" data-action="quick-edit-cost" data-product-id="${p.id}">
+                      修改成本
                     </button>
                     <button type="button" class="btn btn-sm btn-secondary" data-action="edit-product" data-product-id="${p.id}" style="margin-left:4px;">
-                      Edit
+                      编辑
                     </button>
                     <button type="button" class="btn btn-sm btn-secondary" data-action="toggle-product-active" data-product-id="${p.id}" style="margin-left:4px;">
-                      ${p.is_active !== false ? 'Disable' : 'Enable'}
+                      ${p.is_active !== false ? '停售' : '启用'}
                     </button>
                   </td>
                 </tr>
@@ -4164,27 +4636,27 @@ function renderCostHistory(costHistory) {
   return `
     <div class="card">
       <div style="margin-bottom:14px;">
-        <div class="card-title">Cost Change Audit Log</div>
+        <div class="card-title">成本变动审计日志</div>
         <div class="card-subtitle">
-          Whenever a product cost is changed, it is logged here. Past orders permanently retain their original cost snapshots.
+          每次修改成本均会永久留痕。过去已完成的历史订单利润绝不会被篡改。
         </div>
       </div>
 
       ${costHistory.length === 0 ? `
         <div style="text-align:center;padding:50px 20px;color:var(--text-muted);">
-          No cost updates recorded yet. Default baseline costs are active.
+          尚未有成本调价记录，当前均为初始基准成本。
         </div>
       ` : `
         <div class="table-container">
           <table class="table">
             <thead>
               <tr>
-                <th>Date & Time</th>
-                <th>Product</th>
-                <th style="text-align:right;">Previous Cost</th>
-                <th style="text-align:right;">New Cost</th>
-                <th style="text-align:right;">Difference</th>
-                <th>Notes / Reason</th>
+                <th>调价时间</th>
+                <th>商品</th>
+                <th style="text-align:right;">原成本</th>
+                <th style="text-align:right;">新成本</th>
+                <th style="text-align:right;">差额</th>
+                <th>备注原因</th>
               </tr>
             </thead>
             <tbody>
@@ -4197,7 +4669,7 @@ function renderCostHistory(costHistory) {
                     </td>
                     <td style="font-weight:700;">${item.product_name}</td>
                     <td class="num" style="text-align:right;color:var(--text-muted);">${formatRM(item.previous_cost)}</td>
-                    <td class="num" style="text-align:right;font-weight:700;color:var(--color-black);">${formatRM(item.new_cost)}</td>
+                    <td class="num" style="text-align:right;font-weight:700;color:var(--color-brown);">${formatRM(item.new_cost)}</td>
                     <td class="num" style="text-align:right;font-weight:600;color:${diff > 0 ? 'var(--color-danger)' : 'var(--color-success)'};">
                       ${diff > 0 ? `+${formatRM(diff)}` : `-${formatRM(Math.abs(diff))}`}
                     </td>
@@ -4214,13 +4686,12 @@ function renderCostHistory(costHistory) {
 }
 
 
-
 // ==========================================
 // Module: Muki Stall Manager/js/components/backup.js
 // ==========================================
 /**
- * Backup and Restore View Component
- * JSON export/import with pre-validation and confirmation modal, CSV exports, and safety warnings.
+ * Backup, Restore, and GitHub Cloud Sync View Component
+ * JSON export/import with pre-validation, CSV exports, and 1-click GitHub Gist Cloud Sync.
  */
 
 
@@ -4230,90 +4701,169 @@ function renderCostHistory(costHistory) {
 function renderBackup() {
   const lastBackup = store.settings.last_backup_date;
   const lastRestored = store.settings.last_restored_date;
+  const githubToken = store.settings.github_token || '';
+  const lastGithubUpload = store.settings.github_last_upload;
+  const lastGithubPull = store.settings.github_last_pull;
+
+  const isGitHubConfigured = !!githubToken;
 
   return `
     <div>
       <div class="page-header-row">
         <div>
-          <h1 class="page-title">Backup & Restore</h1>
-          <div class="page-subtitle">Safeguard your stall business records, sales history, and product data</div>
+          <h1 class="page-title">数据同步与备份</h1>
+          <div class="page-subtitle">支持 GitHub 云端一键同步、JSON 完整备份与 Excel 报表导出</div>
         </div>
       </div>
 
-      <!-- Critical Notice Callout -->
-      <div style="background:var(--color-white);border:1px solid var(--border-light);border-left:4px solid var(--color-black);border-radius:var(--radius-md);padding:18px 22px;margin-bottom:24px;">
-        <div style="font-weight:700;font-size:1rem;color:var(--color-black);display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-          ${renderIcon('alert', 18)}
-          <span>Important Notice About Device Storage</span>
+      <!-- 1. GitHub Gist Cloud Sync Card (Primary) -->
+      <div class="card" style="margin-bottom:24px;border-top:3px solid var(--color-black);">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              ${renderIcon('backup', 22)}
+              <h2 class="card-title" style="font-size:1.15rem;margin-bottom:0;">GitHub 云端一键同步 (iPad ⇄ 电脑)</h2>
+              ${isGitHubConfigured 
+                ? `<span class="badge badge-active">${renderIcon('check', 12)} 已连接 GitHub</span>` 
+                : `<span class="badge badge-outline">未连接</span>`}
+            </div>
+            <p class="card-subtitle" style="margin-top:6px;line-height:1.5;">
+              利用你现有的 GitHub 免费私有空间存储数据。在 iPad 摊位收摊后按<strong>“上传同步”</strong>，晚上回家在电脑上按<strong>“拉取同步”</strong>即可查看完整账本！
+            </p>
+          </div>
         </div>
-        <p style="font-size:0.88rem;color:var(--text-muted);line-height:1.6;">
-          Your sales and inventory data is stored locally in this browser's IndexedDB database. 
-          Data does <strong>not</strong> automatically sync between your iPad, phone, or laptop. 
-          To prevent data loss (e.g. clearing browser cache), please <strong>download a JSON backup at the end of every market stall day</strong>!
+
+        ${isGitHubConfigured ? `
+          <!-- Configured State: 2 Big 1-Click Action Buttons -->
+          <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:18px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:0.85rem;color:var(--text-muted);margin-bottom:14px;">
+              <div>
+                <span>上次云端上传：</span>
+                <strong style="color:var(--color-black);font-family:var(--font-mono);">${lastGithubUpload ? formatDateTime(lastGithubUpload) : '尚未上传'}</strong>
+              </div>
+              <div>
+                <span>上次云端拉取：</span>
+                <strong style="color:var(--color-black);font-family:var(--font-mono);">${lastGithubPull ? formatDateTime(lastGithubPull) : '尚未拉取'}</strong>
+              </div>
+            </div>
+
+            <div class="grid-2" style="gap:14px;">
+              <button type="button" class="btn btn-primary btn-lg" id="btn-github-upload" style="display:flex;flex-direction:column;gap:3px;padding:12px 16px;">
+                <div style="display:flex;align-items:center;gap:6px;font-size:0.95rem;font-weight:700;">
+                  ${renderIcon('upload', 18)}
+                  <span>1. 摊位收摊：上传同步至 GitHub</span>
+                </div>
+                <div style="font-size:0.75rem;opacity:0.85;font-weight:normal;">
+                  将 iPad 本地今日销售与库存保存到云端
+                </div>
+              </button>
+
+              <button type="button" class="btn btn-secondary btn-lg" id="btn-github-pull" style="display:flex;flex-direction:column;gap:3px;padding:12px 16px;border-color:var(--color-black);">
+                <div style="display:flex;align-items:center;gap:6px;font-size:0.95rem;font-weight:700;">
+                  ${renderIcon('download', 18)}
+                  <span>2. 回家查看：从 GitHub 拉取数据</span>
+                </div>
+                <div style="font-size:0.75rem;color:var(--text-muted);font-weight:normal;">
+                  从云端恢复最新账本到这台电脑
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;color:var(--text-muted);">
+            <div>
+              绑定的 Token：<span style="font-family:var(--font-mono);">${githubToken.substring(0, 7)}••••••••</span>
+            </div>
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-change-github-token">
+              更换 Token
+            </button>
+          </div>
+        ` : `
+          <!-- Unconfigured State: Quick Token Setup -->
+          <div style="background:#FAF5FF;border:1px solid #E9D5FF;border-radius:var(--radius-md);padding:18px;margin-bottom:14px;">
+            <div style="font-weight:700;font-size:0.92rem;color:#6B21A8;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+              ${renderIcon('info', 16)}
+              <span>只需 1 步绑定你的 GitHub Token（永久免费）</span>
+            </div>
+            <p style="font-size:0.85rem;color:#7E22CE;line-height:1.5;margin-bottom:14px;">
+              点击下方按钮，GitHub 会自动为你勾选好所需的 <code>gist</code> 读写权限。在弹出的页面底部点击绿色的 <strong>“Generate token”</strong>，把生成的秘钥复制回来粘贴即可！
+            </p>
+
+            <a href="https://github.com/settings/tokens/new?scopes=gist&description=Muki+Stall+Manager+Sync" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary" style="background:#fff;border-color:#C084FC;color:#6B21A8;font-weight:600;margin-bottom:14px;text-decoration:none;display:inline-flex;">
+              ${renderIcon('plus', 14)}
+              <span>👉 点击前往 GitHub 一键生成专属 Token</span>
+            </a>
+
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+              <input type="password" id="input-github-token" class="form-input" placeholder="在此粘贴 Token (以 ghp_ 开头)" style="flex:1;min-width:260px;font-family:var(--font-mono);">
+              <button type="button" class="btn btn-primary" id="btn-save-github-token">
+                <span>保存并开启云端同步</span>
+              </button>
+            </div>
+          </div>
+        `}
+      </div>
+
+      <!-- Critical Device Storage Notice -->
+      <div style="background:var(--color-white);border:1px solid var(--border-light);border-left:4px solid var(--color-black);border-radius:var(--radius-md);padding:16px 20px;margin-bottom:24px;">
+        <div style="font-weight:700;font-size:0.95rem;color:var(--color-black);display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          ${renderIcon('info', 18)}
+          <span>本地离线存储说明</span>
+        </div>
+        <p style="font-size:0.85rem;color:var(--text-muted);line-height:1.5;">
+          日常摆摊时，即便现场没有 Wi-Fi 信号，所有账本和库存也会安全保存在浏览器本地（IndexedDB）。建议在每次摆摊结束时，点击上方<strong>“上传同步至 GitHub”</strong>，既能在电脑上随时查账，又能作为永久安全的云端防丢备份！
         </p>
-        <div style="margin-top:12px;font-size:0.82rem;color:var(--text-main);font-weight:600;">
-          Last backup created: <span style="font-family:var(--font-mono);font-weight:700;">${lastBackup ? formatDateTime(lastBackup) : 'Never (Please create one now!)'}</span>
-        </div>
       </div>
 
+      <!-- Manual Backup & CSV Downloads -->
       <div class="grid-2" style="gap:24px;margin-bottom:24px;">
-        <!-- Export Card -->
+        <!-- Export JSON File Card -->
         <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;">
           <div>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
               ${renderIcon('download', 20)}
-              <h2 class="card-title">Export Business Data</h2>
+              <h2 class="card-title">本地导出 JSON 文件</h2>
             </div>
-            <p class="card-subtitle" style="line-height:1.5;margin-bottom:16px;">
-              Download a complete JSON snapshot including all products, component recipes, bundle promotions, completed & voided orders, stock movement logs, and stall expenses.
+            <p class="card-subtitle" style="line-height:1.5;margin-bottom:14px;">
+              直接下载一个 <code>.json</code> 离线备份文件保存到电脑或 iCloud 文件夹中。
             </p>
 
-            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:18px;font-size:0.85rem;">
-              <div style="font-weight:600;margin-bottom:6px;">Current Data Snapshot:</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;color:var(--text-muted);">
-                <div>Products: <strong style="color:var(--color-black);">${store.products.length}</strong></div>
-                <div>Orders: <strong style="color:var(--color-black);">${store.orders.length}</strong></div>
-                <div>Promotions: <strong style="color:var(--color-black);">${store.promotions.length}</strong></div>
-                <div>Expenses: <strong style="color:var(--color-black);">${store.expenses.length}</strong></div>
-                <div>Stock Logs: <strong style="color:var(--color-black);">${store.stockMovements.length}</strong></div>
-                <div>Cost Audits: <strong style="color:var(--color-black);">${store.costHistory.length}</strong></div>
-              </div>
+            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;margin-bottom:14px;font-size:0.82rem;color:var(--text-muted);">
+              <div>商品数：<strong style="color:var(--color-black);">${store.products.length}</strong> | 订单数：<strong style="color:var(--color-black);">${store.orders.length}</strong> | 支出记录：<strong style="color:var(--color-black);">${store.expenses.length}</strong></div>
+              <div style="margin-top:4px;">上次本地备份：<strong style="color:var(--color-black);">${lastBackup ? formatDateTime(lastBackup) : '无'}</strong></div>
             </div>
           </div>
 
           <div>
-            <button type="button" class="btn btn-primary btn-lg" data-action="export-json-backup" style="width:100%;">
-              ${renderIcon('download', 18)}
-              <span>Download Full Backup (JSON)</span>
+            <button type="button" class="btn btn-secondary" data-action="export-json-backup" style="width:100%;">
+              ${renderIcon('download', 16)}
+              <span>下载本地备份文件 (JSON)</span>
             </button>
           </div>
         </div>
 
-        <!-- Restore Card -->
+        <!-- Restore from File Card -->
         <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;">
           <div>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
               ${renderIcon('upload', 20)}
-              <h2 class="card-title">Restore from Backup</h2>
+              <h2 class="card-title">从本地文件恢复</h2>
             </div>
-            <p class="card-subtitle" style="line-height:1.5;margin-bottom:16px;">
-              Select a previously exported JSON backup file to restore your business records. The system will preview and validate the file before making changes.
+            <p class="card-subtitle" style="line-height:1.5;margin-bottom:14px;">
+              选择之前下载的 <code>.json</code> 备份文件进行数据导入。导入前会有详细记录确认弹窗。
             </p>
 
-            <div style="background:#fafafa;border:2px dashed var(--border-light);border-radius:var(--radius-md);padding:24px;text-align:center;">
+            <div style="background:#fafafa;border:2px dashed var(--border-light);border-radius:var(--radius-md);padding:18px;text-align:center;">
               <input type="file" id="backup-file-input" accept=".json,application/json" style="display:none;">
-              <button type="button" class="btn btn-secondary" data-action="trigger-file-select">
-                ${renderIcon('upload', 16)}
-                <span>Select JSON Backup File</span>
+              <button type="button" class="btn btn-secondary btn-sm" data-action="trigger-file-select">
+                ${renderIcon('upload', 14)}
+                <span>选择 JSON 备份文件</span>
               </button>
-              <div style="font-size:0.75rem;color:var(--text-light);margin-top:8px;">
-                Only .json files created by Muki Stall Manager
-              </div>
             </div>
           </div>
 
-          <div style="margin-top:16px;font-size:0.8rem;color:var(--text-muted);">
-            ${lastRestored ? `Last restored on: ${formatDateTime(lastRestored)}` : 'No restore operations performed on this browser session.'}
+          <div style="margin-top:12px;font-size:0.75rem;color:var(--text-muted);">
+            ${lastRestored ? `上次恢复时间：${formatDateTime(lastRestored)}` : ''}
           </div>
         </div>
       </div>
@@ -4322,27 +4872,26 @@ function renderBackup() {
       <div class="card">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
           ${renderIcon('dailyRecords', 20)}
-          <h2 class="card-title">Spreadsheet CSV Exports</h2>
+          <h2 class="card-title">导出 Excel / CSV 电子表格</h2>
         </div>
-        <p class="card-subtitle" style="margin-bottom:18px;">
-          Export your sales and inventory data as CSV spreadsheets compatible with Microsoft Excel, Apple Numbers, and Google Sheets.
+        <p class="card-subtitle" style="margin-bottom:14px;">
+          导出为兼容 Microsoft Excel、Apple Numbers 和 Google Sheets 的电子表格报表。
         </p>
 
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <button type="button" class="btn btn-secondary" data-action="export-sales-csv">
             ${renderIcon('download', 16)}
-            <span>Export All Sales to CSV</span>
+            <span>导出全部销售流水 (CSV)</span>
           </button>
           <button type="button" class="btn btn-secondary" data-action="export-inventory-csv">
             ${renderIcon('download', 16)}
-            <span>Export Stock & Catalog to CSV</span>
+            <span>导出库存与商品清单 (CSV)</span>
           </button>
         </div>
       </div>
     </div>
   `;
 }
-
 
 
 // ==========================================
@@ -4352,6 +4901,7 @@ function renderBackup() {
  * Main Application Controller & Router
  * Wires reactive state, responsive layout, navigation, modals, and user interactions.
  */
+
 
 
 
@@ -4389,8 +4939,8 @@ function showToast(message, type = 'success') {
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
   toast.style.cssText = `
-    background: ${type === 'danger' ? '#DC2626' : '#111827'};
-    color: #FFFFFF;
+    background: ${type === 'danger' ? '#DC2626' : '#936653'};
+    color: #f8f6f3;
     padding: 10px 18px;
     border-radius: 8px;
     font-size: 0.88rem;
@@ -4595,6 +5145,14 @@ function attachEventListeners() {
     });
   });
 
+  // Other payment method description input
+  const otherPaymentInput = document.getElementById('pos-other-payment-input');
+  if (otherPaymentInput) {
+    otherPaymentInput.addEventListener('input', (e) => {
+      setPosOtherNote(e.target.value);
+    });
+  }
+
   // Complete Sale Button
   const confirmSaleBtn = document.getElementById('pos-confirm-btn');
   if (confirmSaleBtn) {
@@ -4611,23 +5169,26 @@ function attachEventListeners() {
       });
       cartSubtotal = round(cartSubtotal);
 
-      let discount = 0;
+      let promoDiscount = 0;
       if (currentPromo) {
-        discount = calculatePromotionDiscount(currentPromo, store.cart, cartSubtotal);
+        promoDiscount = calculatePromotionDiscount(currentPromo, store.cart, cartSubtotal);
       }
+      const manualDiscount = store.getManualDiscount();
+      const totalDiscount = round(promoDiscount + manualDiscount);
 
       confirmSaleBtn.disabled = true;
-      confirmSaleBtn.innerHTML = `<span>Processing Order...</span>`;
+      confirmSaleBtn.innerHTML = `<span>处理订单中...</span>`;
 
       try {
         const newOrder = await createOrder({
           cartItems: [...store.cart],
           paymentMethod: posState.paymentMethod,
+          paymentNotes: posState.otherNote,
           promotion: currentPromo,
-          customDiscount: discount
+          customDiscount: totalDiscount
         });
 
-        showToast(`Order ${newOrder.order_number} recorded successfully!`, 'success');
+        showToast(`订单 ${newOrder.order_number} 收款成功！`, 'success');
         openOrderReceiptModal(newOrder);
       } catch (err) {
         showToast(err.message, 'danger');
@@ -4635,6 +5196,35 @@ function attachEventListeners() {
       }
     });
   }
+
+  // On-the-fly cart item price modification
+  appRoot.querySelectorAll('.cart-item-price-input').forEach(input => {
+    input.addEventListener('change', (e) => {
+      const prodId = input.getAttribute('data-product-id');
+      store.updateCartItemPrice(prodId, e.target.value);
+    });
+  });
+
+  // Manual discount input (减多少)
+  const manualDiscountInput = document.getElementById('pos-manual-discount-input');
+  if (manualDiscountInput) {
+    manualDiscountInput.addEventListener('change', (e) => {
+      store.setManualDiscount(e.target.value);
+    });
+  }
+
+  const clearManualDiscountBtn = document.getElementById('pos-clear-manual-discount-btn');
+  if (clearManualDiscountBtn) {
+    clearManualDiscountBtn.addEventListener('click', () => {
+      store.setManualDiscount(0);
+      renderApp();
+    });
+  }
+
+  // Open categories manager modal
+  appRoot.querySelectorAll('[data-action="open-manage-categories-modal"]').forEach(btn => {
+    btn.addEventListener('click', () => openManageCategoriesModal());
+  });
 
   // --- Daily Records Interactions ---
   // Date picker
@@ -4793,6 +5383,83 @@ function attachEventListeners() {
     });
   });
 
+  // --- GitHub Cloud Sync Interactions ---
+  const saveTokenBtn = document.getElementById('btn-save-github-token');
+  if (saveTokenBtn) {
+    saveTokenBtn.addEventListener('click', async () => {
+      const tokenInput = document.getElementById('input-github-token');
+      const token = tokenInput ? tokenInput.value.trim() : '';
+      if (!token) {
+        alert('请输入以 ghp_ 开头的 GitHub Token');
+        return;
+      }
+      saveTokenBtn.disabled = true;
+      saveTokenBtn.innerText = '正在验证连接...';
+      try {
+        const username = await testGitHubToken(token);
+        await saveGitHubToken(token);
+        showToast(`已成功连接 GitHub 账号 (${username})！`, 'success');
+        renderApp();
+      } catch (err) {
+        alert(err.message);
+        saveTokenBtn.disabled = false;
+        saveTokenBtn.innerText = '保存并开启云端同步';
+      }
+    });
+  }
+
+  const changeTokenBtn = document.getElementById('btn-change-github-token');
+  if (changeTokenBtn) {
+    changeTokenBtn.addEventListener('click', async () => {
+      if (confirm('确定要更换绑定的 GitHub Token 吗？')) {
+        await saveGitHubToken('');
+        renderApp();
+      }
+    });
+  }
+
+  const triggerUpload = async (btn) => {
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span>正在上传至 GitHub...</span>';
+    }
+    try {
+      const res = await uploadToGitHub();
+      showToast(`同步成功！已上传至 GitHub (${res.summary.orders} 笔订单，${res.summary.products} 件商品)`, 'success');
+    } catch (err) {
+      alert(`上传同步失败: ${err.message}`);
+    } finally {
+      renderApp();
+    }
+  };
+
+  const githubUploadBtn = document.getElementById('btn-github-upload');
+  if (githubUploadBtn) {
+    githubUploadBtn.addEventListener('click', () => triggerUpload(githubUploadBtn));
+  }
+
+  const quickUploadBtn = appRoot.querySelector('[data-action="quick-github-upload"]');
+  if (quickUploadBtn) {
+    quickUploadBtn.addEventListener('click', () => triggerUpload(quickUploadBtn));
+  }
+
+  const githubPullBtn = document.getElementById('btn-github-pull');
+  if (githubPullBtn) {
+    githubPullBtn.addEventListener('click', async () => {
+      if (!confirm('将从 GitHub 云端拉取最新数据并恢复到本地，是否继续？')) return;
+      githubPullBtn.disabled = true;
+      githubPullBtn.innerHTML = '<span>正在从 GitHub 拉取数据...</span>';
+      try {
+        const res = await pullFromGitHub();
+        showToast(`拉取成功！已恢复云端数据 (${res.counts.orders} 笔订单)`, 'success');
+      } catch (err) {
+        alert(`拉取数据失败: ${err.message}`);
+      } finally {
+        renderApp();
+      }
+    });
+  }
+
   // --- Backup & Restore Interactions ---
   const exportJsonBtn = appRoot.querySelector('[data-action="export-json-backup"]');
   if (exportJsonBtn) {
@@ -4876,8 +5543,8 @@ function openOrderReceiptModal(order) {
         <div class="modal-body" style="padding:16px;">
           <!-- Printable Receipt -->
           <div class="receipt-box" id="printable-receipt">
-            <div style="text-align:center;border-bottom:1px dashed #000;padding-bottom:10px;margin-bottom:12px;">
-              <div style="font-weight:800;font-size:1.15rem;letter-spacing:0.05em;">MUKI STALL</div>
+            <div style="text-align:center;border-bottom:1px dashed #936653;padding-bottom:10px;margin-bottom:12px;">
+              <div style="font-weight:800;font-size:1.15rem;letter-spacing:0.05em;color:var(--color-brown-dark);">MUKI STALL</div>
               <div style="font-size:0.75rem;color:var(--text-muted);">Creative Products & Collectibles</div>
             </div>
 
@@ -4915,7 +5582,7 @@ function openOrderReceiptModal(order) {
               </div>
             ` : ''}
 
-            <div style="display:flex;justify-content:space-between;font-size:1.1rem;font-weight:800;border-top:1px dashed #000;padding-top:8px;margin-top:6px;">
+            <div style="display:flex;justify-content:space-between;font-size:1.1rem;font-weight:800;border-top:1px dashed #936653;padding-top:8px;margin-top:6px;color:var(--color-brown-dark);">
               <span>TOTAL PAID:</span>
               <span style="font-family:var(--font-mono);">${formatRM(order.final_amount)}</span>
             </div>
@@ -5194,13 +5861,99 @@ function openStockAdjustModal(preselectedProductId = '') {
   });
 }
 
+// 4.5 Manage Categories Modal (Dynamic Add & Delete)
+function openManageCategoriesModal() {
+  const container = document.getElementById('modal-container');
+  if (!container) return;
+
+  const categories = store.getCategories();
+
+  container.innerHTML = `
+    <div class="modal-overlay">
+      <div class="modal-card" style="max-width:460px;">
+        <div class="modal-header">
+          <div class="modal-title" style="display:flex;align-items:center;gap:6px;">
+            ${renderIcon('tag', 18)}
+            <span>商品分类管理</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:14px;">
+            点击分类旁边的 × 即可删除，也可以随时在下方添加新分类：
+          </p>
+
+          <!-- Current Categories Tags -->
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;">
+            ${categories.map(cat => `
+              <div style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-secondary);border:1px solid var(--border-light);padding:5px 12px;border-radius:20px;font-size:0.88rem;font-weight:700;color:var(--color-brown);">
+                <span>${cat}</span>
+                <button type="button" class="btn-delete-cat" data-category="${cat}" title="删除此分类" style="background:none;border:none;color:var(--color-danger);cursor:pointer;font-size:0.85rem;line-height:1;padding:0 2px;display:flex;align-items:center;">
+                  ${renderIcon('x', 13)}
+                </button>
+              </div>
+            `).join('')}
+          </div>
+
+          <!-- Add New Category -->
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">添加新分类</label>
+            <div style="display:flex;gap:8px;">
+              <input type="text" id="new-category-input" class="form-input" placeholder="输入新分类名称 (如 Keychains, Prints)">
+              <button type="button" class="btn btn-primary" id="btn-add-category" style="white-space:nowrap;">
+                ${renderIcon('plus', 14)}
+                <span>添加</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="modal-close-footer-btn">完成</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+  document.getElementById('modal-close-footer-btn').addEventListener('click', closeModal);
+
+  // Add category
+  const addBtn = document.getElementById('btn-add-category');
+  const input = document.getElementById('new-category-input');
+  if (addBtn && input) {
+    const handleAdd = async () => {
+      const val = input.value.trim();
+      if (!val) return;
+      await store.addCategory(val);
+      showToast(`已添加分类 "${val}"`, 'success');
+      openManageCategoriesModal();
+    };
+    addBtn.addEventListener('click', handleAdd);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleAdd();
+    });
+  }
+
+  // Delete category
+  container.querySelectorAll('.btn-delete-cat').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const cat = btn.getAttribute('data-category');
+      if (confirm(`确定要删除分类 "${cat}" 吗？`)) {
+        await store.deleteCategory(cat);
+        showToast(`已删除分类 "${cat}"`, 'success');
+        openManageCategoriesModal();
+      }
+    });
+  });
+}
+
 // 5. Add / Edit Product Modal
 function openProductModal(prod = null) {
   const container = document.getElementById('modal-container');
   if (!container) return;
 
   const isEdit = !!prod;
-  const categories = ['Mukichip', 'Accessories', 'Stickers', 'Bundles', 'Other'];
+  const categories = store.getCategories();
 
   container.innerHTML = `
     <div class="modal-overlay">
@@ -5761,10 +6514,10 @@ async function bootstrap() {
     const appRoot = document.getElementById('app');
     if (appRoot) {
       appRoot.innerHTML = `
-        <div style="display:flex;height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:16px;color:#111827;padding:24px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">
+        <div style="display:flex;height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:16px;color:#936653;padding:24px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">
           <div style="font-weight:800;font-size:1.4rem;color:#DC2626;">系统启动遇到问题 (Startup Error)</div>
-          <div style="font-size:0.9rem;color:#6B7280;max-width:400px;line-height:1.5;">${err.message || 'IndexedDB 存储加载异常'}</div>
-          <button onclick="location.reload()" style="background:#000;color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem;">
+          <div style="font-size:0.9rem;color:#a78170;max-width:400px;line-height:1.5;">${err.message || 'IndexedDB 存储加载异常'}</div>
+          <button onclick="location.reload()" style="background:#936653;color:#f8f6f3;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem;">
             重新加载 (Retry)
           </button>
         </div>
