@@ -2423,9 +2423,6 @@ async function createBackupData() {
   await db.putItem('settings', { key: 'last_backup_date', value: timestamp });
   await store.refreshAll();
 
-  // Strip sensitive tokens so credentials are never leaked inside backup JSON or Gists
-  const safeSettings = settings.filter(s => s.key !== 'github_token' && s.key !== 'github_gist_id');
-
   return {
     meta: {
       appName: 'Muki Stall Manager',
@@ -2449,7 +2446,7 @@ async function createBackupData() {
       stock_movements: stockMovements,
       cost_history: costHistory,
       expenses,
-      settings: safeSettings
+      settings
     }
   };
 }
@@ -2500,10 +2497,6 @@ function validateBackupFile(parsedJson) {
 async function restoreFromBackup(backupData, mode = 'replace') {
   const data = backupData.data || backupData.raw || backupData;
 
-  // Preserve local device's GitHub credentials if present
-  const currentTokenSetting = await db.getById('settings', 'github_token');
-  const currentGistIdSetting = await db.getById('settings', 'github_gist_id');
-
   const storesToRestore = [
     { name: 'products', items: data.products },
     { name: 'recipes', items: data.recipes },
@@ -2522,14 +2515,7 @@ async function restoreFromBackup(backupData, mode = 'replace') {
       await db.clearStore(name);
     }
 
-    if (name === 'settings') {
-      const filtered = items.filter(s => s.key !== 'github_token' && s.key !== 'github_gist_id');
-      if (currentTokenSetting) filtered.push(currentTokenSetting);
-      if (currentGistIdSetting) filtered.push(currentGistIdSetting);
-      await db.bulkPut(name, filtered);
-    } else {
-      await db.bulkPut(name, items);
-    }
+    await db.bulkPut(name, items);
   }
 
   // Record restoration timestamp
@@ -2677,6 +2663,8 @@ async function getGitHubConfig() {
 async function saveGitHubToken(token) {
   const cleaned = (token || '').trim();
   await db.putItem('settings', { key: 'github_token', value: cleaned });
+  // Always clear cached gistId when changing or resetting token so a fresh gist can be created/re-linked cleanly
+  await db.deleteItem('settings', 'github_gist_id');
   await store.refreshAll();
   return cleaned;
 }
@@ -2712,40 +2700,51 @@ async function uploadToGitHub() {
     throw new Error('GitHub Token is not configured. Please save a token first.');
   }
 
-  // 1. Prepare current full database backup
+  // 1. Prepare current full database backup (sanitized, with tokens stripped)
   const backup = await createBackupData();
   const backupJsonString = JSON.stringify(backup, null, 2);
 
   let gistId = config.gistId;
+  let resultGist = null;
 
-  // 2. If no gistId stored, check if a Muki gist already exists under user's account
-  if (!gistId) {
+  // 2. If a gistId is stored, try updating it with PATCH
+  if (gistId) {
     try {
-      const gistsRes = await fetch('https://api.github.com/gists?per_page=50', {
+      const patchRes = await fetch(`https://api.github.com/gists/${gistId}`, {
+        method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${config.token}`,
-          'Accept': 'application/vnd.github+json'
-        }
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          description: GIST_DESCRIPTION,
+          files: {
+            [GIST_FILENAME]: {
+              content: backupJsonString
+            }
+          }
+        })
       });
 
-      if (gistsRes.ok) {
-        const gists = await gistsRes.json();
-        const existing = gists.find(g => g.files && g.files[GIST_FILENAME]);
-        if (existing) {
-          gistId = existing.id;
-          await db.putItem('settings', { key: 'github_gist_id', value: gistId });
-        }
+      if (patchRes.ok) {
+        resultGist = await patchRes.json();
+      } else {
+        const patchErr = await patchRes.json().catch(() => ({}));
+        console.warn(`PATCH existing gist (${gistId}) failed with status ${patchRes.status}: ${patchErr.message || 'unknown'}. Clearing stale Gist ID and falling back to creating a clean Gist...`);
+        await db.deleteItem('settings', 'github_gist_id');
+        gistId = null;
       }
-    } catch (e) {
-      console.warn('Gist lookup warning:', e);
+    } catch (netErr) {
+      console.warn('Network error during PATCH gist, attempting clean Gist fallback:', netErr);
+      await db.deleteItem('settings', 'github_gist_id');
+      gistId = null;
     }
   }
 
-  // 3. Create new secret Gist or Update existing Gist
-  let response;
-  if (!gistId) {
-    // Create new Secret Gist
-    response = await fetch('https://api.github.com/gists', {
+  // 3. If update failed or no gistId yet, create a fresh Secret Gist
+  if (!resultGist) {
+    const postRes = await fetch('https://api.github.com/gists', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${config.token}`,
@@ -2762,35 +2761,21 @@ async function uploadToGitHub() {
         }
       })
     });
-  } else {
-    // Update existing Gist
-    response = await fetch(`https://api.github.com/gists/${gistId}`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${config.token}`,
-        'Accept': 'application/vnd.github+json',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        description: GIST_DESCRIPTION,
-        files: {
-          [GIST_FILENAME]: {
-            content: backupJsonString
-          }
-        }
-      })
-    });
-  }
 
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Invalid or revoked token (Bad credentials). Please click "Change Token" to paste a new Token.');
+    if (!postRes.ok) {
+      const errorBody = await postRes.json().catch(() => ({}));
+      if (postRes.status === 401) {
+        throw new Error('Invalid or expired GitHub Token (Bad credentials). Please click "Change Token" to update your token.');
+      }
+      if (postRes.status === 404 || postRes.status === 403) {
+        throw new Error('GitHub Token lacks "gist" permission. Please ensure the token has the "gist" scope checked on GitHub.');
+      }
+      throw new Error(errorBody.message || `Upload failed: HTTP ${postRes.status}`);
     }
-    const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.message || `Upload failed: HTTP ${response.status}`);
+
+    resultGist = await postRes.json();
   }
 
-  const resultGist = await response.json();
   const now = new Date().toISOString();
 
   // Save gist ID and last upload timestamp
@@ -2814,10 +2799,7 @@ async function pullFromGitHub() {
     throw new Error('GitHub Token is not configured. Please save a token first.');
   }
 
-  let gistId = config.gistId;
-
-  // If no gistId, find it on GitHub
-  if (!gistId) {
+  const findLatestGistId = async () => {
     const gistsRes = await fetch('https://api.github.com/gists?per_page=50', {
       headers: {
         'Authorization': `Bearer ${config.token}`,
@@ -2826,32 +2808,51 @@ async function pullFromGitHub() {
     });
 
     if (!gistsRes.ok) {
+      if (gistsRes.status === 401) throw new Error('Invalid or expired GitHub Token (Bad credentials).');
       throw new Error(`Failed to retrieve data from GitHub: HTTP ${gistsRes.status}`);
     }
 
     const gists = await gistsRes.json();
-    const existing = gists.find(g => g.files && g.files[GIST_FILENAME]);
-    if (!existing) {
+    const matches = gists
+      .filter(g => g.files && g.files[GIST_FILENAME])
+      .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+
+    if (matches.length === 0) {
       throw new Error('No muki-stall-data.json backup found on GitHub yet. Please click "Upload to GitHub" on your stall device first.');
     }
+    return matches[0].id;
+  };
 
-    gistId = existing.id;
-    await db.putItem('settings', { key: 'github_gist_id', value: gistId });
+  let gistId = config.gistId;
+  let response = null;
+
+  if (gistId) {
+    response = await fetch(`https://api.github.com/gists/${gistId}`, {
+      headers: {
+        'Authorization': `Bearer ${config.token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+    if (!response.ok) {
+      console.warn(`Cached gist ID ${gistId} not accessible (HTTP ${response.status}), looking up latest...`);
+      await db.deleteItem('settings', 'github_gist_id');
+      gistId = null;
+    }
   }
 
-  // Fetch Gist details
-  const response = await fetch(`https://api.github.com/gists/${gistId}`, {
-    headers: {
-      'Authorization': `Bearer ${config.token}`,
-      'Accept': 'application/vnd.github+json'
-    }
-  });
+  if (!gistId) {
+    gistId = await findLatestGistId();
+    await db.putItem('settings', { key: 'github_gist_id', value: gistId });
+    response = await fetch(`https://api.github.com/gists/${gistId}`, {
+      headers: {
+        'Authorization': `Bearer ${config.token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+  }
 
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Invalid or revoked token (Bad credentials). Please click "Change Token" to paste a new Token.');
-    }
-    throw new Error(`Failed to pull from GitHub: HTTP ${response.status}`);
+  if (!response || !response.ok) {
+    throw new Error(`Failed to pull from GitHub: HTTP ${response ? response.status : 'unknown'}`);
   }
 
   const gistData = await response.json();
