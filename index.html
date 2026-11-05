@@ -2423,6 +2423,9 @@ async function createBackupData() {
   await db.putItem('settings', { key: 'last_backup_date', value: timestamp });
   await store.refreshAll();
 
+  // Strip sensitive tokens so credentials are never leaked inside backup JSON or Gists
+  const safeSettings = settings.filter(s => s.key !== 'github_token' && s.key !== 'github_gist_id');
+
   return {
     meta: {
       appName: 'Muki Stall Manager',
@@ -2446,7 +2449,7 @@ async function createBackupData() {
       stock_movements: stockMovements,
       cost_history: costHistory,
       expenses,
-      settings
+      settings: safeSettings
     }
   };
 }
@@ -2497,6 +2500,10 @@ function validateBackupFile(parsedJson) {
 async function restoreFromBackup(backupData, mode = 'replace') {
   const data = backupData.data || backupData.raw || backupData;
 
+  // Preserve local device's GitHub credentials if present
+  const currentTokenSetting = await db.getById('settings', 'github_token');
+  const currentGistIdSetting = await db.getById('settings', 'github_gist_id');
+
   const storesToRestore = [
     { name: 'products', items: data.products },
     { name: 'recipes', items: data.recipes },
@@ -2515,7 +2522,14 @@ async function restoreFromBackup(backupData, mode = 'replace') {
       await db.clearStore(name);
     }
 
-    await db.bulkPut(name, items);
+    if (name === 'settings') {
+      const filtered = items.filter(s => s.key !== 'github_token' && s.key !== 'github_gist_id');
+      if (currentTokenSetting) filtered.push(currentTokenSetting);
+      if (currentGistIdSetting) filtered.push(currentGistIdSetting);
+      await db.bulkPut(name, filtered);
+    } else {
+      await db.bulkPut(name, items);
+    }
   }
 
   // Record restoration timestamp
@@ -2769,6 +2783,9 @@ async function uploadToGitHub() {
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Invalid or revoked token (Bad credentials). Please click "Change Token" to paste a new Token.');
+    }
     const errorBody = await response.json().catch(() => ({}));
     throw new Error(errorBody.message || `Upload failed: HTTP ${response.status}`);
   }
@@ -2831,6 +2848,9 @@ async function pullFromGitHub() {
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Invalid or revoked token (Bad credentials). Please click "Change Token" to paste a new Token.');
+    }
     throw new Error(`Failed to pull from GitHub: HTTP ${response.status}`);
   }
 
