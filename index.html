@@ -904,6 +904,7 @@ const INITIAL_PRODUCTS = [
     stock: 50,
     is_bundle: false,
     is_active: true,
+    sort_order: 1,
     description: 'Original single Mukichip collectible coin V1',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -917,6 +918,7 @@ const INITIAL_PRODUCTS = [
     stock: 0,   // Calculated dynamically from V1 Single components
     is_bundle: true,
     is_active: true,
+    sort_order: 2,
     description: 'Complete Set of 6 Mukichip V1 coins',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -930,6 +932,7 @@ const INITIAL_PRODUCTS = [
     stock: 50,
     is_bundle: false,
     is_active: true,
+    sort_order: 3,
     description: 'Action/Craving/Fate series Mukichip collectible coin V2',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -943,6 +946,7 @@ const INITIAL_PRODUCTS = [
     stock: 0,   // Calculated dynamically from V2 Single components
     is_bundle: true,
     is_active: true,
+    sort_order: 4,
     description: 'Complete Set of 5 Mukichip V2 coins',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -956,6 +960,7 @@ const INITIAL_PRODUCTS = [
     stock: 30,
     is_bundle: false,
     is_active: true,
+    sort_order: 5,
     description: 'Double-sided acrylic charm keychain',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -969,6 +974,7 @@ const INITIAL_PRODUCTS = [
     stock: 0,   // Calculated from components
     is_bundle: true,
     is_active: true,
+    sort_order: 6,
     description: '1x V1 + 1x V2 + 1x Acrylic Keychain bundle',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -983,6 +989,7 @@ const INITIAL_PRODUCTS = [
     is_bundle: false,
     is_active: true,
     needs_config: true,
+    sort_order: 7,
     description: 'New product - configure price, cost and stock before selling',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -1507,7 +1514,13 @@ class AppStore {
       db.getAll('settings')
     ]);
 
-    this.products = products;
+    // Ensure sort_order on products and sort by sequence
+    products.forEach((p, idx) => {
+      if (typeof p.sort_order !== 'number') {
+        p.sort_order = idx + 1;
+      }
+    });
+    this.products = products.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
     this.recipes = recipes;
     this.promotions = promotions;
     // Sort orders newest first
@@ -1619,6 +1632,90 @@ class AppStore {
     let cats = this.getCategories().filter(c => c !== name);
     if (cats.length === 0) cats = ['Other'];
     await db.putItem('settings', { key: 'custom_categories', value: cats });
+    await this.refreshAll();
+  }
+
+  // --- Operating Expenses Categories Management ---
+  getExpenseCategories() {
+    const defaultExpenseCats = ['Stall rental', 'Transportation', 'Packaging', 'Printing', 'Other'];
+    const custom = this.settings.custom_expense_categories;
+    if (Array.isArray(custom) && custom.length > 0) {
+      return custom;
+    }
+    return defaultExpenseCats;
+  }
+
+  async addExpenseCategory(name) {
+    const trimmed = (name || '').trim();
+    if (!trimmed) return;
+    const cats = [...this.getExpenseCategories()];
+    if (!cats.includes(trimmed)) {
+      cats.push(trimmed);
+      await db.putItem('settings', { key: 'custom_expense_categories', value: cats });
+      await this.refreshAll();
+    }
+  }
+
+  async deleteExpenseCategory(name) {
+    let cats = this.getExpenseCategories().filter(c => c !== name);
+    if (cats.length === 0) cats = ['Other'];
+    await db.putItem('settings', { key: 'custom_expense_categories', value: cats });
+    await this.refreshAll();
+  }
+
+  // --- Product Ordering / Sequence Management ---
+  async moveProduct(productId, direction) {
+    const idx = this.products.findIndex(p => p.id === productId);
+    if (idx === -1) return;
+
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= this.products.length) return;
+
+    const current = this.products[idx];
+    const target = this.products[targetIdx];
+
+    const currentOrder = current.sort_order ?? (idx + 1);
+    const targetOrder = target.sort_order ?? (targetIdx + 1);
+
+    if (currentOrder === targetOrder) {
+      this.products.splice(idx, 1);
+      this.products.splice(targetIdx, 0, current);
+      for (let i = 0; i < this.products.length; i++) {
+        this.products[i].sort_order = i + 1;
+        await db.putItem('products', this.products[i]);
+      }
+    } else {
+      current.sort_order = targetOrder;
+      target.sort_order = currentOrder;
+      await db.putItem('products', current);
+      await db.putItem('products', target);
+    }
+
+    await this.refreshAll();
+  }
+
+  async sortProductsBy(criteria) {
+    let sorted = [...this.products];
+    if (criteria === 'name_asc') {
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (criteria === 'name_desc') {
+      sorted.sort((a, b) => b.name.localeCompare(a.name));
+    } else if (criteria === 'price_desc') {
+      sorted.sort((a, b) => (Number(b.selling_price) || 0) - (Number(a.selling_price) || 0));
+    } else if (criteria === 'price_asc') {
+      sorted.sort((a, b) => (Number(a.selling_price) || 0) - (Number(b.selling_price) || 0));
+    } else if (criteria === 'stock_asc') {
+      sorted.sort((a, b) => this.getAvailableStock(a.id) - this.getAvailableStock(b.id));
+    } else if (criteria === 'stock_desc') {
+      sorted.sort((a, b) => this.getAvailableStock(b.id) - this.getAvailableStock(a.id));
+    } else if (criteria === 'category') {
+      sorted.sort((a, b) => (a.category || '').localeCompare(b.category || '') || a.name.localeCompare(b.name));
+    }
+
+    for (let i = 0; i < sorted.length; i++) {
+      sorted[i].sort_order = i + 1;
+      await db.putItem('products', sorted[i]);
+    }
     await this.refreshAll();
   }
 
@@ -4236,6 +4333,7 @@ function renderStockTab(products) {
         <table class="table">
           <thead>
             <tr>
+              <th style="width:72px;text-align:center;">Order</th>
               <th>Product Name</th>
               <th>Category</th>
               <th>Stock Type</th>
@@ -4247,7 +4345,7 @@ function renderStockTab(products) {
             </tr>
           </thead>
           <tbody>
-            ${products.map(prod => {
+            ${products.map((prod, idx) => {
               const isBundle = store.isBundleProduct(prod.id);
               const recipes = store.getProductRecipes(prod.id);
               const available = store.getAvailableStock(prod.id);
@@ -4256,6 +4354,13 @@ function renderStockTab(products) {
 
               return `
                 <tr>
+                  <td style="text-align:center;white-space:nowrap;">
+                    <div style="display:inline-flex;align-items:center;gap:2px;">
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${prod.id}" data-dir="up" title="Move Up" style="padding:2px 5px;font-size:0.7rem;line-height:1;" ${idx === 0 ? 'disabled' : ''}>▲</button>
+                      <span style="font-size:0.78rem;font-weight:700;color:var(--text-muted);min-width:18px;text-align:center;">${idx + 1}</span>
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${prod.id}" data-dir="down" title="Move Down" style="padding:2px 5px;font-size:0.7rem;line-height:1;" ${idx === products.length - 1 ? 'disabled' : ''}>▼</button>
+                    </div>
+                  </td>
                   <td style="font-weight:700;">
                     ${prod.name}
                     ${prod.needs_config ? `<span class="badge badge-warning" style="margin-left:4px;">Config needed</span>` : ''}
@@ -4413,7 +4518,7 @@ function setExpenseCategoryFilter(cat) {
 }
 
 function renderExpenses() {
-  const categories = ['All', 'Stall rental', 'Transportation', 'Packaging', 'Printing', 'Other'];
+  const categories = ['All', ...store.getExpenseCategories()];
   let expenses = store.expenses || [];
 
   if (expenseCategoryFilter !== 'All') {
@@ -4433,7 +4538,11 @@ function renderExpenses() {
           <h1 class="page-title">Operating Expenses</h1>
           <div class="page-subtitle">Track stall rental, logistics, printing, and packaging for net profit calculation</div>
         </div>
-        <div>
+        <div style="display:flex;gap:10px;">
+          <button type="button" class="btn btn-secondary" data-action="open-manage-expense-categories-modal">
+            ${renderIcon('tag', 16)}
+            <span>Manage Categories</span>
+          </button>
           <button type="button" class="btn btn-primary" data-action="open-add-expense-modal">
             ${renderIcon('plus', 16)}
             <span>Record New Expense</span>
@@ -4588,10 +4697,29 @@ function renderProducts() {
 function renderProductList(products) {
   return `
     <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+        <div style="font-size:0.85rem;color:var(--text-muted);">
+          Total: <strong>${products.length}</strong> products. Use <strong>▲/▼</strong> to set your custom display sequence.
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <label style="font-size:0.78rem;font-weight:600;color:var(--text-muted);">Sort by:</label>
+          <select id="products-sort-select" class="form-select" style="font-size:0.82rem;padding:4px 8px;width:auto;">
+            <option value="custom">Custom Order (Saved)</option>
+            <option value="name_asc">Name (A → Z)</option>
+            <option value="category">Category</option>
+            <option value="price_desc">Price (High to Low)</option>
+            <option value="price_asc">Price (Low to High)</option>
+            <option value="stock_asc">Stock (Lowest first)</option>
+            <option value="stock_desc">Stock (Highest first)</option>
+          </select>
+        </div>
+      </div>
+
       <div class="table-container">
         <table class="table">
           <thead>
             <tr>
+              <th style="width:72px;text-align:center;">Order</th>
               <th>Product Name</th>
               <th>Category</th>
               <th style="text-align:right;">Price</th>
@@ -4603,12 +4731,19 @@ function renderProductList(products) {
             </tr>
           </thead>
           <tbody>
-            ${products.map(p => {
+            ${products.map((p, idx) => {
               const isBundle = store.isBundleProduct(p.id);
               const computedCost = store.getComputedCost(p.id);
 
               return `
                 <tr style="${!p.is_active ? 'opacity:0.55;background:#fafafa;' : ''}">
+                  <td style="text-align:center;white-space:nowrap;">
+                    <div style="display:inline-flex;align-items:center;gap:2px;">
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${p.id}" data-dir="up" title="Move Up" style="padding:2px 5px;font-size:0.7rem;line-height:1;" ${idx === 0 ? 'disabled' : ''}>▲</button>
+                      <span style="font-size:0.78rem;font-weight:700;color:var(--text-muted);min-width:18px;text-align:center;">${idx + 1}</span>
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${p.id}" data-dir="down" title="Move Down" style="padding:2px 5px;font-size:0.7rem;line-height:1;" ${idx === products.length - 1 ? 'disabled' : ''}>▼</button>
+                    </div>
+                  </td>
                   <td style="font-weight:700;">
                     <div style="display:flex;align-items:center;gap:8px;">
                       ${p.image ? `<img src="${p.image}" alt="" style="width:28px;height:28px;border-radius:4px;object-fit:cover;border:1px solid var(--border-light);">` : ''}
@@ -5396,6 +5531,32 @@ function attachEventListeners() {
     });
   });
 
+  // Product re-ordering (▲ / ▼ buttons in Products and Inventory)
+  appRoot.querySelectorAll('[data-action="move-product"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const prodId = btn.getAttribute('data-product-id');
+      const dir = btn.getAttribute('data-dir');
+      await store.moveProduct(prodId, dir);
+      renderApp();
+    });
+  });
+
+  // Product sorting dropdown
+  const prodSortSelect = document.getElementById('products-sort-select');
+  if (prodSortSelect) {
+    prodSortSelect.addEventListener('change', async (e) => {
+      if (e.target.value !== 'custom') {
+        await store.sortProductsBy(e.target.value);
+        renderApp();
+      }
+    });
+  }
+
+  // Manage Expense Categories Modal trigger
+  appRoot.querySelectorAll('[data-action="open-manage-expense-categories-modal"]').forEach(btn => {
+    btn.addEventListener('click', () => openManageExpenseCategoriesModal());
+  });
+
   // --- Promotions Interactions ---
   const createPromoBtn = appRoot.querySelector('[data-action="open-create-promo-modal"]');
   if (createPromoBtn) {
@@ -6172,7 +6333,7 @@ function openAddExpenseModal() {
   const container = document.getElementById('modal-container');
   if (!container) return;
 
-  const categories = ['Stall rental', 'Transportation', 'Packaging', 'Printing', 'Other'];
+  const categories = store.getExpenseCategories();
 
   container.innerHTML = `
     <div class="modal-overlay">
@@ -6247,6 +6408,88 @@ function openAddExpenseModal() {
     await store.refreshAll();
     showToast(`Recorded expense ${formatRM(amount)}`, 'success');
     closeModal();
+  });
+}
+
+// 7.5 Manage Expense Categories Modal (Dynamic Add & Delete)
+function openManageExpenseCategoriesModal() {
+  const container = document.getElementById('modal-container');
+  if (!container) return;
+
+  const categories = store.getExpenseCategories();
+
+  container.innerHTML = `
+    <div class="modal-overlay">
+      <div class="modal-card" style="max-width:460px;">
+        <div class="modal-header">
+          <div class="modal-title" style="display:flex;align-items:center;gap:6px;">
+            ${renderIcon('tag', 18)}
+            <span>Manage Expense Categories</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:14px;">
+            Click × next to an expense category to delete it, or add new categories below:
+          </p>
+
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;">
+            ${categories.map(cat => `
+              <div style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-secondary);border:1px solid var(--border-light);padding:5px 12px;border-radius:20px;font-size:0.88rem;font-weight:700;color:var(--color-brown);">
+                <span>${cat}</span>
+                <button type="button" class="btn-delete-exp-cat" data-category="${cat}" title="Delete Category" style="background:none;border:none;color:var(--color-danger);cursor:pointer;font-size:0.85rem;line-height:1;padding:0 2px;display:flex;align-items:center;">
+                  ${renderIcon('x', 13)}
+                </button>
+              </div>
+            `).join('')}
+          </div>
+
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Add New Expense Category</label>
+            <div style="display:flex;gap:8px;">
+              <input type="text" id="new-exp-cat-input" class="form-input" placeholder="e.g. Food & Drinks, Market Fee, Electricity">
+              <button type="button" class="btn btn-primary" id="btn-add-exp-cat" style="white-space:nowrap;">
+                ${renderIcon('plus', 14)}
+                <span>Add Category</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="modal-close-footer-btn">Done</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+  document.getElementById('modal-close-footer-btn').addEventListener('click', closeModal);
+
+  const addBtn = document.getElementById('btn-add-exp-cat');
+  const input = document.getElementById('new-exp-cat-input');
+  if (addBtn && input) {
+    const handleAdd = async () => {
+      const val = input.value.trim();
+      if (!val) return;
+      await store.addExpenseCategory(val);
+      showToast(`Expense category "${val}" added`, 'success');
+      openManageExpenseCategoriesModal();
+    };
+    addBtn.addEventListener('click', handleAdd);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleAdd();
+    });
+  }
+
+  container.querySelectorAll('.btn-delete-exp-cat').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const cat = btn.getAttribute('data-category');
+      if (confirm(`Are you sure you want to delete expense category "${cat}"?`)) {
+        await store.deleteExpenseCategory(cat);
+        showToast(`Expense category "${cat}" deleted`, 'success');
+        openManageExpenseCategoriesModal();
+      }
+    });
   });
 }
 
