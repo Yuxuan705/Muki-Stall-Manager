@@ -701,6 +701,39 @@ h1.page-title {
    RESPONSIVE — TABLET & MOBILE
    ========================================================= */
 
+@media (min-width: 769px) {
+  .pos-mobile-tabs,
+  .pos-floating-cart-bar,
+  .pos-mobile-back-btn {
+    display: none !important;
+  }
+
+  .table--mobile-cards {
+    display: table;
+  }
+  .table--mobile-cards thead {
+    display: table-header-group !important;
+  }
+  .table--mobile-cards tbody {
+    display: table-row-group;
+  }
+  .table--mobile-cards tr {
+    display: table-row;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+  }
+  .table--mobile-cards td {
+    display: table-cell;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .table--mobile-cards td::before {
+    display: none !important;
+  }
+}
+
 @media (max-width: 1024px) {
   .pos-layout {
     grid-template-columns: 1fr 360px;
@@ -714,6 +747,19 @@ h1.page-title {
     --header-height: 54px;
   }
 
+  /* Global viewport lock - NO horizontal scroll anywhere */
+  html, body {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+    width: 100% !important;
+  }
+
+  #app {
+    max-width: 100vw !important;
+    width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
   /* Hide desktop sidebar, show mobile chrome */
   .sidebar { display: none; }
   .top-header { display: flex; }
@@ -721,72 +767,259 @@ h1.page-title {
 
   .main-wrapper {
     margin-left: 0;
-    padding-bottom: var(--bottom-nav-height);
+    min-width: 0 !important;
+    max-width: 100vw !important;
+    width: 100% !important;
+    overflow-x: hidden !important;
+    padding-bottom: calc(var(--bottom-nav-height) + 16px);
   }
 
   .main-content {
-    padding: 14px 12px 24px 12px;
+    min-width: 0 !important;
+    max-width: 100vw !important;
+    width: 100% !important;
+    padding: 12px 10px 24px 10px;
+    box-sizing: border-box !important;
   }
 
   /* ---- Typography scaling ---- */
-  h1.page-title { font-size: 1.3rem; }
-  .page-subtitle { font-size: 0.82rem; }
+  h1.page-title { font-size: 1.25rem; }
+  .page-subtitle { font-size: 0.8rem; }
   .page-header-row { margin-bottom: 14px; gap: 10px; }
 
   /* ---- Cards ---- */
-  .card { padding: 14px; }
+  .card {
+    padding: 12px;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
   .card-title { font-size: 0.95rem; }
 
   /* ---- Grids collapse to 1-column ---- */
-  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; gap: 12px; }
+  .grid-2, .grid-3, .grid-4 {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
 
-  /* ---- Tables: horizontal scroll + bigger tap targets ---- */
-  .table td, .table th { padding: 10px 10px; font-size: 0.82rem; }
-  .table-container { -webkit-overflow-scrolling: touch; }
+  /* ---- Tables: Card transformation on mobile ---- */
+  .table-container {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table--mobile-cards {
+    border: none;
+    width: 100%;
+    display: block;
+  }
+
+  .table--mobile-cards thead {
+    display: none !important;
+  }
+
+  .table--mobile-cards tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .table--mobile-cards tr {
+    display: block;
+    background: #ffffff;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    box-shadow: 0 1px 3px rgba(147, 102, 83, 0.05);
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  .table--mobile-cards td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border: none;
+    border-bottom: 1px dashed #f2ebe3;
+    font-size: 0.85rem;
+    gap: 10px;
+    min-height: 28px;
+    box-sizing: border-box;
+  }
+
+  .table--mobile-cards td:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .table--mobile-cards td::before {
+    content: attr(data-label);
+    font-weight: 700;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    min-width: 75px;
+    text-align: left;
+  }
+
+  .table--mobile-cards td[data-label=""]::before,
+  .table--mobile-cards td:not([data-label])::before {
+    display: none;
+  }
+
+  .table--mobile-cards td.td-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 8px;
+    margin-top: 4px;
+  }
+
+  .table--mobile-cards td.td-full-width {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .table--mobile-cards td.td-full-width::before {
+    margin-bottom: 2px;
+  }
 
   /* ---- Buttons: bigger touch targets on mobile ---- */
-  .btn { min-height: 44px; font-size: 0.88rem; }
-  .btn-sm { min-height: 36px; padding: 6px 12px; font-size: 0.78rem; }
-  .btn-lg { min-height: 52px; }
+  .btn { min-height: 42px; font-size: 0.88rem; }
+  .btn-sm { min-height: 34px; padding: 5px 10px; font-size: 0.78rem; }
+  .btn-lg { min-height: 48px; }
 
   /* ---- Forms: larger inputs for fat fingers ---- */
   .form-input, .form-select, .form-textarea {
-    padding: 11px 12px;
+    padding: 10px 12px;
     font-size: 16px; /* prevents iOS auto-zoom on focus */
-    min-height: 44px;
+    min-height: 42px;
+    box-sizing: border-box;
   }
 
-  /* ---- POS: stack catalog + cart vertically ---- */
+  /* ---- POS Mobile Specific ---- */
   .pos-layout {
     display: flex;
     flex-direction: column;
     height: auto;
     gap: 0;
+    min-width: 0;
+    width: 100%;
   }
 
   .pos-catalog {
     height: auto;
     overflow: visible;
+    width: 100%;
+    min-width: 0;
   }
 
   .pos-cart-panel {
     height: auto;
-    max-height: 480px;
-    margin-top: 12px;
-    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    max-height: none;
+    margin-top: 8px;
+    border-radius: var(--radius-md);
+    width: 100%;
+    min-width: 0;
+  }
+
+  .pos-cart-items {
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  .pos-category-scroll {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    padding: 2px 0 6px 0;
+    scrollbar-width: none;
+  }
+  .pos-category-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Segmented switch on mobile: Products / Cart */
+  .pos-mobile-tabs {
+    display: flex;
+    background: var(--bg-secondary);
+    border-radius: 24px;
+    padding: 3px;
+    margin-bottom: 12px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .pos-mobile-tab-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 10px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    border-radius: 20px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .pos-mobile-tab-btn.active {
+    background: var(--color-brown);
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(147, 102, 83, 0.25);
+  }
+
+  .pos-floating-cart-bar {
+    display: flex;
+    position: fixed;
+    bottom: calc(var(--bottom-nav-height) + 10px);
+    left: 12px;
+    right: 12px;
+    background: var(--color-brown-dark);
+    color: #ffffff;
+    border-radius: 28px;
+    padding: 10px 16px;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 4px 16px rgba(110, 68, 51, 0.45);
+    z-index: 50;
+    cursor: pointer;
+    box-sizing: border-box;
+  }
+
+  .pos-mobile-hidden {
+    display: none !important;
   }
 
   /* POS product grid: 2 columns on phone */
   .pos-product-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-    overflow-y: visible;
-    padding-bottom: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    overflow-y: visible !important;
+    padding-bottom: 80px !important;
+    width: 100% !important;
+    min-width: 0 !important;
   }
 
   .product-tap-card {
-    min-height: 100px;
+    min-height: 95px;
     padding: 10px;
+    box-sizing: border-box;
   }
 
   /* ---- Modals: slide up from bottom on mobile ---- */
@@ -824,43 +1057,29 @@ h1.page-title {
   /* ---- Top header ---- */
   .top-header {
     height: var(--header-height);
-    padding: 8px 14px;
+    padding: 8px 12px;
     padding-top: max(8px, env(safe-area-inset-top, 8px));
   }
 
   /* ---- Dashboard stat cards: 2-column grid ---- */
   .dashboard-stats-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
   }
 }
 
-
-    /* Print thermal receipt styles */
-    @media print {
-      body * { visibility: hidden; }
-      #printable-receipt, #printable-receipt * { visibility: visible; }
-      #printable-receipt {
-        position: absolute; left: 0; top: 0; width: 100%; max-width: 80mm;
-        margin: 0; padding: 10px; background: #fff; border: none;
-      }
-      .modal-header, .modal-footer, .sidebar, .top-header, .bottom-nav { display: none !important; }
-    }
   </style>
 </head>
 <body>
-
-  <div id="app">
-    <div style="display:flex;height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:#936653;padding:20px;text-align:center;background:#f8f6f3;">
-      <img src="Muki.png" alt="Muki" style="height:72px;width:auto;object-fit:contain;margin-bottom:4px;" onerror="this.style.display='none'">
-      <div style="font-weight:800;font-size:1.5rem;letter-spacing:-0.03em;color:#936653;">MUKI STALL MANAGER</div>
-      <div style="font-size:0.88rem;color:#a78170;">Loading database &amp; local inventory...</div>
-    </div>
-  </div>
+  <div id="app"></div>
 
   <script>
+
 (function() {
-// === Module: Muki Stall Manager/js/utils/format.js ===
+  'use strict';
+// ==========================================
+// Module: Muki Stall Manager/js/utils/format.js
+// ==========================================
 /**
  * Formatting and Math Utilities
  * Consistent RM currency formatting, dates, math rounding, and sequential order numbers.
@@ -936,7 +1155,9 @@ function generateOrderNumber(sequence = 1) {
 }
 
 
-// === Module: Muki Stall Manager/js/components/icons.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/components/icons.js
+// ==========================================
 /**
  * Minimalist SVG Icons
  * Zero-dependency, offline-ready vector icons with stroke-width: 1.75
@@ -981,7 +1202,9 @@ function renderIcon(name, size = 18, className = '') {
 
 
 
-// === Module: Muki Stall Manager/js/seedData.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/seedData.js
+// ==========================================
 /**
  * Initial Sample Data for Muki Stall Manager
  * Auto-seeded when database is first created.
@@ -1162,7 +1385,9 @@ const INITIAL_SETTINGS = [
 
 
 
-// === Module: Muki Stall Manager/js/db.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/db.js
+// ==========================================
 /**
  * IndexedDB Database Layer for Muki Stall Manager
  * Pure browser-native, reliable, persistent local storage.
@@ -1512,13 +1737,23 @@ async function runTransaction(storeNames, mode, fn) {
 
 
 
+// Explicit database adapter namespace for bundled runtime
 const db = {
-  openDatabase, getAll, getById, putItem, addItem,
-  deleteItem, clearStore, bulkPut, runTransaction
+  openDatabase,
+  getAll,
+  getById,
+  putItem,
+  addItem,
+  deleteItem,
+  clearStore,
+  bulkPut,
+  runTransaction
 };
 
 
-// === Module: Muki Stall Manager/js/store.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/store.js
+// ==========================================
 /**
  * Central Reactive Store
  * Manages in-memory cache synchronized with IndexedDB and dispatches change events.
@@ -1882,7 +2117,9 @@ const store = new AppStore();
 
 
 
-// === Module: Muki Stall Manager/js/services/inventory.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/services/inventory.js
+// ==========================================
 /**
  * Inventory Service
  * Handles component-based bundle deductions, stock adjustments, recipe management, and audit trails.
@@ -2109,7 +2346,9 @@ async function saveRecipe(parentProductId, components) {
 
 
 
-// === Module: Muki Stall Manager/js/services/promotions.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/services/promotions.js
+// ==========================================
 /**
  * Promotions Service
  * Evaluates bundle promos, discount rules, and tracks promo usage counts.
@@ -2237,7 +2476,9 @@ async function togglePromotionActive(promoId) {
 
 
 
-// === Module: Muki Stall Manager/js/services/sales.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/services/sales.js
+// ==========================================
 /**
  * Sales / POS Service
  * Handles order checkout, cost snapshots, profit calculations, inventory deductions, and order cancellations.
@@ -2465,7 +2706,9 @@ async function updateProductCost(productId, newCost, notes = '') {
 
 
 
-// === Module: Muki Stall Manager/js/services/backup.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/services/backup.js
+// ==========================================
 /**
  * Backup and Restore Service
  * Full JSON snapshot export/import and CSV for spreadsheets.
@@ -2720,7 +2963,9 @@ function triggerFileDownload(blob, filename) {
 
 
 
-// === Module: Muki Stall Manager/js/services/githubSync.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/services/githubSync.js
+// ==========================================
 /**
  * GitHub Gist Cloud Sync Service
  * Allows solo stall owners to sync data between iPad and computer with 1 click.
@@ -2987,7 +3232,9 @@ async function pullFromGitHub() {
 
 
 
-// === Module: Muki Stall Manager/js/utils/testScenarios.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/utils/testScenarios.js
+// ==========================================
 /**
  * Automated Test Suite for 10 Required Test Scenarios
  * Validates inventory deductions, bundle recipes, cost snapshots, cancellations, profit, and backup/restore.
@@ -3224,7 +3471,9 @@ async function runAllTests() {
 
 
 
-// === Module: Muki Stall Manager/js/components/navbar.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/components/navbar.js
+// ==========================================
 /**
  * Navigation Component
  * Provides responsive sidebar for desktop/iPad and bottom-bar/header for mobile.
@@ -3332,7 +3581,9 @@ function renderBottomNav(currentView) {
 
 
 
-// === Module: Muki Stall Manager/js/components/dashboard.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/components/dashboard.js
+// ==========================================
 /**
  * Dashboard View Component
  * Clean, essential stall overview: Today's KPIs, current remaining stock, and recent sales.
@@ -3381,7 +3632,7 @@ function renderDashboard() {
       </div>
 
       <!-- Today's Essential KPIs -->
-      <div class="grid-4" style="margin-bottom:24px;">
+      <div class="grid-4 dashboard-stats-grid" style="margin-bottom:20px;">
         <div class="card">
           <div class="card-subtitle">Today's Revenue</div>
           <div style="font-size:1.75rem;font-weight:700;color:var(--color-black);margin-top:6px;font-family:var(--font-mono);">
@@ -3428,8 +3679,8 @@ function renderDashboard() {
             </button>
           </div>
 
-          <div class="table-container" style="max-height:360px;overflow-y:auto;">
-            <table class="table">
+          <div class="table-container" style="max-height:380px;overflow-y:auto;">
+            <table class="table table--mobile-cards">
               <thead>
                 <tr>
                   <th>Product</th>
@@ -3445,15 +3696,15 @@ function renderDashboard() {
                   const isLow = available <= 10;
                   return `
                     <tr>
-                      <td style="font-weight:600;">
+                      <td data-label="Product" style="font-weight:700;">
                         ${prod.name}
                         ${prod.needs_config ? `<span class="badge badge-warning" style="margin-left:6px;">Needs Config</span>` : ''}
                       </td>
-                      <td><span class="badge badge-outline">${prod.category}</span></td>
-                      <td class="num" style="text-align:right;font-weight:700;font-size:1rem;">
+                      <td data-label="Category"><span class="badge badge-outline">${prod.category}</span></td>
+                      <td data-label="Stock / Sets" class="num" style="text-align:right;font-weight:700;font-size:0.95rem;">
                         ${available} ${isBundle ? '<span style="font-size:0.75rem;font-weight:normal;color:var(--text-muted);">sets</span>' : ''}
                       </td>
-                      <td>
+                      <td data-label="Status">
                         ${isLow 
                           ? `<span class="badge badge-warning">${renderIcon('alert', 12)} Low</span>` 
                           : `<span class="badge badge-active">${renderIcon('check', 12)} OK</span>`}
@@ -3488,7 +3739,7 @@ function renderDashboard() {
             </div>
           ` : `
             <div class="table-container">
-              <table class="table">
+              <table class="table table--mobile-cards">
                 <thead>
                   <tr>
                     <th>Order</th>
@@ -3501,20 +3752,20 @@ function renderDashboard() {
                 <tbody>
                   ${recentOrders.map(o => `
                     <tr>
-                      <td style="font-family:var(--font-mono);font-size:0.8rem;font-weight:600;">
+                      <td data-label="Order" style="font-family:var(--font-mono);font-size:0.8rem;font-weight:700;">
                         ${o.order_number}
                         ${o.status === 'cancelled' ? '<span class="badge badge-cancelled" style="margin-left:4px;">Void</span>' : ''}
                       </td>
-                      <td style="font-size:0.8rem;color:var(--text-muted);">${formatTime(o.timestamp)}</td>
-                      <td style="font-size:0.82rem;">
+                      <td data-label="Time" style="font-size:0.8rem;color:var(--text-muted);">${formatTime(o.timestamp)}</td>
+                      <td data-label="Items" style="font-size:0.82rem;color:var(--text-muted);">
                         ${(o.items || []).map(i => `${i.name} (x${i.quantity || i.qty})`).join(', ')}
                       </td>
-                      <td class="num" style="text-align:right;font-weight:700;">
+                      <td data-label="Paid" class="num" style="text-align:right;font-weight:700;color:var(--color-brown);">
                         ${formatRM(o.final_amount)}
                       </td>
-                      <td style="text-align:center;">
+                      <td data-label="Action" class="td-actions">
                         <button type="button" class="btn btn-sm btn-secondary" data-action="inspect-order" data-order-id="${o.id}">
-                          View
+                          View Details
                         </button>
                       </td>
                     </tr>
@@ -3531,7 +3782,9 @@ function renderDashboard() {
 
 
 
-// === Module: Muki Stall Manager/js/components/pos.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/components/pos.js
+// ==========================================
 /**
  * Point of Sale (POS) Component
  * Touch-optimized stall checkout with dynamic categories, editable prices, custom discount input,
@@ -3548,6 +3801,16 @@ let searchQuery = '';
 let selectedPromotionId = '';
 let selectedPaymentMethod = 'Cash';
 let otherPaymentNote = '';
+
+let posMobileTab = 'catalog'; // 'catalog' | 'cart'
+
+function setPosMobileTab(tab) {
+  posMobileTab = tab;
+}
+
+function getPosMobileTab() {
+  return posMobileTab;
+}
 
 function getPosState() {
   return {
@@ -3624,40 +3887,55 @@ function renderPos() {
   const totalDiscount = round(promoDiscount + manualDiscount);
   const finalTotal = round(Math.max(0, cartSubtotal - totalDiscount));
 
+  const totalCartCount = store.cart.reduce((sum, item) => sum + (item.quantity || 0), 0);
+
   return `
-    <div class="pos-layout">
-      <!-- Left: Product Catalog Grid -->
-      <div class="pos-catalog">
-        <!-- Search and Category Filters -->
-        <div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-          <div style="flex:1;min-width:200px;position:relative;">
-            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-light);pointer-events:none;">
-              ${renderIcon('search', 16)}
-            </span>
-            <input type="text" 
-              id="pos-search-input" 
-              class="form-input" 
-              placeholder="Search products..." 
-              value="${searchQuery}" 
-              style="padding-left:34px;">
-          </div>
-          <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;max-width:100%;align-items:center;">
-            ${categories.map(cat => `
-              <button type="button" 
-                class="btn btn-sm ${activeCategoryFilter === cat ? 'btn-primary' : 'btn-secondary'}" 
-                data-action="pos-filter-cat" 
-                data-category="${cat}"
-                style="white-space:nowrap;border-radius:20px;">
-                ${cat}
+    <div>
+      <!-- Mobile Segmented Switch: Products vs Cart -->
+      <div class="pos-mobile-tabs">
+        <button type="button" class="pos-mobile-tab-btn ${posMobileTab === 'catalog' ? 'active' : ''}" data-action="pos-set-mobile-tab" data-tab="catalog">
+          ${renderIcon('package', 16)}
+          <span>Products (${filteredProducts.length})</span>
+        </button>
+        <button type="button" class="pos-mobile-tab-btn ${posMobileTab === 'cart' ? 'active' : ''}" data-action="pos-set-mobile-tab" data-tab="cart">
+          ${renderIcon('pos', 16)}
+          <span>Cart (${totalCartCount}) • ${formatRM(finalTotal)}</span>
+        </button>
+      </div>
+
+      <div class="pos-layout">
+        <!-- Left: Product Catalog Grid -->
+        <div class="pos-catalog ${posMobileTab === 'cart' ? 'pos-mobile-hidden' : ''}">
+          <!-- Search and Category Filters -->
+          <div style="margin-bottom:12px;display:flex;flex-direction:column;gap:8px;">
+            <div style="width:100%;position:relative;">
+              <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-light);pointer-events:none;">
+                ${renderIcon('search', 16)}
+              </span>
+              <input type="text" 
+                id="pos-search-input" 
+                class="form-input" 
+                placeholder="Search products..." 
+                value="${searchQuery}" 
+                style="padding-left:36px;width:100%;">
+            </div>
+            <div class="pos-category-scroll">
+              ${categories.map(cat => `
+                <button type="button" 
+                  class="btn btn-sm ${activeCategoryFilter === cat ? 'btn-primary' : 'btn-secondary'}" 
+                  data-action="pos-filter-cat" 
+                  data-category="${cat}"
+                  style="white-space:nowrap;border-radius:20px;padding:4px 12px;flex-shrink:0;">
+                  ${cat}
+                </button>
+              `).join('')}
+              
+              <button type="button" class="btn btn-sm btn-secondary" data-action="open-manage-categories-modal" title="Manage Categories" style="border-radius:20px;border-style:dashed;padding:4px 10px;white-space:nowrap;flex-shrink:0;">
+                ${renderIcon('plus', 12)}
+                <span>Category</span>
               </button>
-            `).join('')}
-            
-            <button type="button" class="btn btn-sm btn-secondary" data-action="open-manage-categories-modal" title="Manage Categories" style="border-radius:20px;border-style:dashed;padding:4px 10px;white-space:nowrap;">
-              ${renderIcon('plus', 12)}
-              <span>Category</span>
-            </button>
+            </div>
           </div>
-        </div>
 
         <!-- Product Cards Grid -->
         <div class="pos-product-grid">
@@ -3712,7 +3990,13 @@ function renderPos() {
       </div>
 
       <!-- Right: Sticky Cart & Checkout Panel -->
-      <div class="pos-cart-panel">
+      <div class="pos-cart-panel ${posMobileTab === 'catalog' ? 'pos-mobile-hidden' : ''}">
+        <div class="pos-mobile-back-btn" style="padding:10px 14px 4px 14px;">
+          <button type="button" class="btn btn-sm btn-secondary" data-action="pos-set-mobile-tab" data-tab="catalog" style="width:100%;justify-content:center;font-weight:700;">
+            ${renderIcon('chevronLeft', 16)}
+            <span>Back to Products</span>
+          </button>
+        </div>
         <div style="padding:14px 16px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center;">
           <div style="display:flex;align-items:center;gap:8px;">
             ${renderIcon('pos', 18)}
@@ -3877,11 +4161,32 @@ function renderPos() {
         </div>
       </div>
     </div>
+
+    <!-- Floating Cart Bar for Mobile -->
+    ${posMobileTab === 'catalog' && totalCartCount > 0 ? `
+      <div class="pos-floating-cart-bar" data-action="pos-set-mobile-tab" data-tab="cart">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="background:var(--color-yellow);color:var(--color-brown-dark);font-weight:800;font-size:0.85rem;padding:2px 8px;border-radius:12px;">
+            ${totalCartCount} item${totalCartCount > 1 ? 's' : ''}
+          </span>
+          <span style="font-weight:800;font-size:1.05rem;color:#ffffff;letter-spacing:-0.01em;">
+            ${formatRM(finalTotal)}
+          </span>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;font-weight:700;font-size:0.88rem;color:#ffffff;">
+          <span>Review Cart &amp; Pay</span>
+          ${renderIcon('chevronRight', 16)}
+        </div>
+      </div>
+    ` : ''}
+  </div>
   `;
 }
 
 
-// === Module: Muki Stall Manager/js/components/promotions.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/components/promotions.js
+// ==========================================
 /**
  * Bundle & Promotion Management View Component
  * Manage bundle promotions, pricing rules, validity dates, component requirements, and usage counters.
@@ -4013,7 +4318,9 @@ function renderPromotions() {
 
 
 
-// === Module: Muki Stall Manager/js/components/dailyRecords.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/components/dailyRecords.js
+// ==========================================
 /**
  * Daily Records Component
  * Date-based history with daily financial summaries (Revenue, COGS, Gross Profit, Expenses, Net Profit),
@@ -4209,7 +4516,7 @@ function renderDailyRecords() {
             </div>
           ` : `
             <div class="table-container">
-              <table class="table">
+              <table class="table table--mobile-cards">
                 <thead>
                   <tr>
                     <th>Product</th>
@@ -4221,10 +4528,10 @@ function renderDailyRecords() {
                 <tbody>
                   ${Object.entries(productBreakdown).map(([name, data]) => `
                     <tr>
-                      <td style="font-weight:600;">${name}</td>
-                      <td class="num" style="text-align:right;">${data.qty}</td>
-                      <td class="num" style="text-align:right;">${formatRM(data.revenue)}</td>
-                      <td class="num" style="text-align:right;color:var(--color-black);font-weight:600;">${formatRM(data.profit)}</td>
+                      <td data-label="Product" style="font-weight:700;">${name}</td>
+                      <td data-label="Qty" class="num" style="text-align:right;font-weight:700;">${data.qty}</td>
+                      <td data-label="Revenue" class="num" style="text-align:right;">${formatRM(data.revenue)}</td>
+                      <td data-label="Profit" class="num" style="text-align:right;color:var(--color-brown);font-weight:700;">${formatRM(data.profit)}</td>
                     </tr>
                   `).join('')}
                 </tbody>
@@ -4365,7 +4672,9 @@ function renderDailyRecords() {
 
 
 
-// === Module: Muki Stall Manager/js/components/inventory.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/components/inventory.js
+// ==========================================
 /**
  * Inventory Management View Component
  * Component recipes, physical stock levels, assembled capacity, stock adjustments, and full audit logs.
@@ -4436,7 +4745,7 @@ function renderStockTab(products) {
   return `
     <div class="card" style="margin-bottom:24px;">
       <div class="table-container">
-        <table class="table">
+        <table class="table table--mobile-cards">
           <thead>
             <tr>
               <th style="width:72px;text-align:center;">Order</th>
@@ -4460,45 +4769,45 @@ function renderStockTab(products) {
 
               return `
                 <tr>
-                  <td style="text-align:center;white-space:nowrap;">
-                    <div style="display:inline-flex;align-items:center;gap:2px;">
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${prod.id}" data-dir="up" title="Move Up" style="padding:2px 5px;font-size:0.7rem;line-height:1;" ${idx === 0 ? 'disabled' : ''}>▲</button>
-                      <span style="font-size:0.78rem;font-weight:700;color:var(--text-muted);min-width:18px;text-align:center;">${idx + 1}</span>
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${prod.id}" data-dir="down" title="Move Down" style="padding:2px 5px;font-size:0.7rem;line-height:1;" ${idx === products.length - 1 ? 'disabled' : ''}>▼</button>
+                  <td data-label="Order" style="text-align:center;white-space:nowrap;">
+                    <div style="display:inline-flex;align-items:center;gap:4px;">
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${prod.id}" data-dir="up" title="Move Up" style="padding:2px 7px;font-size:0.75rem;line-height:1;" ${idx === 0 ? 'disabled' : ''}>▲</button>
+                      <span style="font-size:0.82rem;font-weight:700;color:var(--text-muted);min-width:20px;text-align:center;">${idx + 1}</span>
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${prod.id}" data-dir="down" title="Move Down" style="padding:2px 7px;font-size:0.75rem;line-height:1;" ${idx === products.length - 1 ? 'disabled' : ''}>▼</button>
                     </div>
                   </td>
-                  <td style="font-weight:700;">
+                  <td data-label="Product" style="font-weight:700;font-size:0.95rem;">
                     ${prod.name}
                     ${prod.needs_config ? `<span class="badge badge-warning" style="margin-left:4px;">Config needed</span>` : ''}
                   </td>
-                  <td><span class="badge badge-outline">${prod.category}</span></td>
-                  <td>
+                  <td data-label="Category"><span class="badge badge-outline">${prod.category}</span></td>
+                  <td data-label="Stock Type">
                     ${isBundle 
                       ? `<span class="badge badge-bundle">Bundle Recipe</span>` 
                       : `<span class="badge" style="background:#f3f4f6;">Individual Item</span>`}
                   </td>
-                  <td style="font-size:0.82rem;color:var(--text-muted);max-width:240px;">
+                  <td data-label="Recipe" class="td-full-width" style="font-size:0.82rem;color:var(--text-muted);">
                     ${recipes.length > 0 ? recipes.map(r => {
                       const comp = store.products.find(p => p.id === r.component_product_id);
                       return `<div>• ${comp ? comp.name : 'Unknown'}: <strong>×${r.quantity}</strong></div>`;
                     }).join('') : '<span style="color:var(--text-light);">Direct physical item</span>'}
                   </td>
-                  <td class="num" style="text-align:right;font-weight:600;font-size:0.95rem;">
+                  <td data-label="Physical Stock" class="num" style="text-align:right;font-weight:600;font-size:0.95rem;">
                     ${isBundle ? '<span style="color:var(--text-light);font-weight:normal;">Auto-assembled</span>' : directStock}
                   </td>
-                  <td class="num" style="text-align:right;font-weight:700;font-size:1.05rem;color:${available <= 5 ? 'var(--color-danger)' : 'var(--color-black)'};">
+                  <td data-label="Available" class="num" style="text-align:right;font-weight:700;font-size:1.05rem;color:${available <= 5 ? 'var(--color-danger)' : 'var(--color-brown);'};">
                     ${available} <span style="font-size:0.75rem;font-weight:normal;color:var(--text-muted);">${isBundle ? 'sets' : 'units'}</span>
                   </td>
-                  <td class="num" style="text-align:right;color:var(--text-muted);">
+                  <td data-label="Unit Cost" class="num" style="text-align:right;color:var(--text-muted);">
                     ${formatRM(computedCost)}
                   </td>
-                  <td style="text-align:right;white-space:nowrap;">
+                  <td data-label="Action" class="td-actions">
                     ${!isBundle ? `
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="quick-adjust-stock" data-product-id="${prod.id}">
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="quick-adjust-stock" data-product-id="${prod.id}" style="width:100%;">
                         Adjust Stock
                       </button>
                     ` : `
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="edit-recipe" data-product-id="${prod.id}">
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="edit-recipe" data-product-id="${prod.id}" style="width:100%;">
                         Edit Recipe
                       </button>
                     `}
@@ -4551,7 +4860,7 @@ function renderMovementsTab(movements, products) {
         </div>
       ` : `
         <div class="table-container">
-          <table class="table">
+          <table class="table table--mobile-cards">
             <thead>
               <tr>
                 <th>Date & Time</th>
@@ -4567,17 +4876,17 @@ function renderMovementsTab(movements, products) {
                 const isPos = m.delta > 0;
                 return `
                   <tr>
-                    <td style="font-size:0.8rem;color:var(--text-muted);white-space:nowrap;">
+                    <td data-label="Date & Time" style="font-size:0.8rem;color:var(--text-muted);white-space:nowrap;">
                       ${formatDateTime(m.timestamp)}
                     </td>
-                    <td style="font-weight:600;">${m.product_name}</td>
-                    <td class="num" style="text-align:center;font-weight:700;color:${isPos ? 'var(--color-success)' : 'var(--color-danger)'};">
+                    <td data-label="Product" style="font-weight:700;">${m.product_name}</td>
+                    <td data-label="Change" class="num" style="text-align:center;font-weight:700;color:${isPos ? 'var(--color-success)' : 'var(--color-danger)'};">
                       ${isPos ? `+${m.delta}` : m.delta}
                     </td>
-                    <td class="num" style="text-align:right;font-size:0.85rem;">
+                    <td data-label="Prev → New" class="num" style="text-align:right;font-size:0.85rem;">
                       ${m.previous_stock} → <strong>${m.new_stock}</strong>
                     </td>
-                    <td>
+                    <td data-label="Reason">
                       <span class="badge ${
                         m.reason === 'sale' ? 'badge-outline' :
                         m.reason === 'order_cancellation' ? 'badge-warning' :
@@ -4587,7 +4896,7 @@ function renderMovementsTab(movements, products) {
                         ${m.reason}
                       </span>
                     </td>
-                    <td style="font-size:0.82rem;color:var(--text-muted);max-width:300px;">
+                    <td data-label="Notes" style="font-size:0.82rem;color:var(--text-muted);">
                       ${m.order_number ? `Order ${m.order_number}: ` : ''}${m.notes || '-'}
                     </td>
                   </tr>
@@ -4603,7 +4912,9 @@ function renderMovementsTab(movements, products) {
 
 
 
-// === Module: Muki Stall Manager/js/components/expenses.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/components/expenses.js
+// ==========================================
 /**
  * Expenses Management View Component
  * Record and track stall operating expenses (Stall rental, Transportation, Packaging, Printing, Other)
@@ -4689,7 +5000,7 @@ function renderExpenses() {
           </div>
         ` : `
           <div class="table-container">
-            <table class="table">
+            <table class="table table--mobile-cards">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -4703,22 +5014,23 @@ function renderExpenses() {
               <tbody>
                 ${expenses.map(exp => `
                   <tr>
-                    <td style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">
+                    <td data-label="Date" style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">
                       ${formatDate(exp.date)}
                     </td>
-                    <td style="font-weight:700;color:var(--color-black);">${exp.name}</td>
-                    <td>
+                    <td data-label="Expense" style="font-weight:700;color:var(--color-black);">${exp.name}</td>
+                    <td data-label="Category">
                       <span class="badge badge-outline">${exp.category}</span>
                     </td>
-                    <td class="num" style="text-align:right;font-weight:700;font-size:0.95rem;color:var(--color-black);">
+                    <td data-label="Amount" class="num" style="text-align:right;font-weight:700;font-size:1.05rem;color:var(--color-brown);">
                       ${formatRM(exp.amount)}
                     </td>
-                    <td style="font-size:0.82rem;color:var(--text-muted);max-width:280px;">
+                    <td data-label="Notes" style="font-size:0.82rem;color:var(--text-muted);">
                       ${exp.notes || '-'}
                     </td>
-                    <td style="text-align:right;">
+                    <td data-label="Action" class="td-actions">
                       <button type="button" class="btn btn-sm btn-secondary" style="color:var(--color-danger);" data-action="delete-expense" data-expense-id="${exp.id}">
                         ${renderIcon('trash', 14)}
+                        <span>Delete</span>
                       </button>
                     </td>
                   </tr>
@@ -4734,7 +5046,9 @@ function renderExpenses() {
 
 
 
-// === Module: Muki Stall Manager/js/components/products.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/components/products.js
+// ==========================================
 /**
  * Products & Settings View Component
  * Add/edit products, dynamic categories management, cost changes, and enable/disable items.
@@ -4818,7 +5132,7 @@ function renderProductList(products) {
       </div>
 
       <div class="table-container">
-        <table class="table">
+        <table class="table table--mobile-cards">
           <thead>
             <tr>
               <th style="width:72px;text-align:center;">Order</th>
@@ -4839,50 +5153,50 @@ function renderProductList(products) {
 
               return `
                 <tr style="${!p.is_active ? 'opacity:0.55;background:#fafafa;' : ''}">
-                  <td style="text-align:center;white-space:nowrap;">
-                    <div style="display:inline-flex;align-items:center;gap:2px;">
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${p.id}" data-dir="up" title="Move Up" style="padding:2px 5px;font-size:0.7rem;line-height:1;" ${idx === 0 ? 'disabled' : ''}>▲</button>
-                      <span style="font-size:0.78rem;font-weight:700;color:var(--text-muted);min-width:18px;text-align:center;">${idx + 1}</span>
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${p.id}" data-dir="down" title="Move Down" style="padding:2px 5px;font-size:0.7rem;line-height:1;" ${idx === products.length - 1 ? 'disabled' : ''}>▼</button>
+                  <td data-label="Order" style="text-align:center;white-space:nowrap;">
+                    <div style="display:inline-flex;align-items:center;gap:4px;">
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${p.id}" data-dir="up" title="Move Up" style="padding:2px 7px;font-size:0.75rem;line-height:1;" ${idx === 0 ? 'disabled' : ''}>▲</button>
+                      <span style="font-size:0.82rem;font-weight:700;color:var(--text-muted);min-width:20px;text-align:center;">${idx + 1}</span>
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${p.id}" data-dir="down" title="Move Down" style="padding:2px 7px;font-size:0.75rem;line-height:1;" ${idx === products.length - 1 ? 'disabled' : ''}>▼</button>
                     </div>
                   </td>
-                  <td style="font-weight:700;">
+                  <td data-label="Product" style="font-weight:700;font-size:0.95rem;">
                     <div style="display:flex;align-items:center;gap:8px;">
-                      ${p.image ? `<img src="${p.image}" alt="" style="width:28px;height:28px;border-radius:4px;object-fit:cover;border:1px solid var(--border-light);">` : ''}
+                      ${p.image ? `<img src="${p.image}" alt="" style="width:32px;height:32px;border-radius:4px;object-fit:cover;border:1px solid var(--border-light);">` : ''}
                       <div>
                         <div>${p.name}</div>
                         ${p.needs_config ? `<span class="badge badge-warning" style="margin-top:2px;">Needs Config</span>` : ''}
                       </div>
                     </div>
                   </td>
-                  <td><span class="badge badge-outline">${p.category}</span></td>
-                  <td class="num" style="text-align:right;font-weight:700;color:var(--color-brown);">
+                  <td data-label="Category"><span class="badge badge-outline">${p.category}</span></td>
+                  <td data-label="Price" class="num" style="text-align:right;font-weight:700;color:var(--color-brown);font-size:1.05rem;">
                     ${formatRM(p.selling_price)}
                   </td>
-                  <td class="num" style="text-align:right;color:var(--text-muted);">
+                  <td data-label="Unit Cost" class="num" style="text-align:right;color:var(--text-muted);">
                     ${formatRM(computedCost)}
                   </td>
-                  <td class="num" style="text-align:right;">
+                  <td data-label="Stock" class="num" style="text-align:right;font-weight:600;">
                     ${isBundle ? '<span style="color:var(--text-light);font-size:0.8rem;">(Formula)</span>' : (Number(p.stock) || 0)}
                   </td>
-                  <td style="text-align:center;">
+                  <td data-label="Type" style="text-align:center;">
                     ${isBundle 
                       ? `<span class="badge badge-bundle">Bundle</span>` 
                       : `<span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);">Single</span>`}
                   </td>
-                  <td style="text-align:center;">
+                  <td data-label="Status" style="text-align:center;">
                     ${p.is_active !== false 
                       ? `<span class="badge badge-active">Active</span>` 
                       : `<span class="badge badge-cancelled">Disabled</span>`}
                   </td>
-                  <td style="text-align:right;white-space:nowrap;">
+                  <td data-label="Actions" class="td-actions" style="text-align:right;white-space:nowrap;">
                     <button type="button" class="btn btn-sm btn-secondary" data-action="quick-edit-cost" data-product-id="${p.id}">
-                      Edit Cost
+                      Cost
                     </button>
-                    <button type="button" class="btn btn-sm btn-secondary" data-action="edit-product" data-product-id="${p.id}" style="margin-left:4px;">
+                    <button type="button" class="btn btn-sm btn-secondary" data-action="edit-product" data-product-id="${p.id}">
                       Edit
                     </button>
-                    <button type="button" class="btn btn-sm btn-secondary" data-action="toggle-product-active" data-product-id="${p.id}" style="margin-left:4px;">
+                    <button type="button" class="btn btn-sm btn-secondary" data-action="toggle-product-active" data-product-id="${p.id}">
                       ${p.is_active !== false ? 'Disable' : 'Enable'}
                     </button>
                   </td>
@@ -4912,7 +5226,7 @@ function renderCostHistory(costHistory) {
         </div>
       ` : `
         <div class="table-container">
-          <table class="table">
+          <table class="table table--mobile-cards">
             <thead>
               <tr>
                 <th>Date & Time</th>
@@ -4928,16 +5242,16 @@ function renderCostHistory(costHistory) {
                 const diff = (Number(item.new_cost) || 0) - (Number(item.previous_cost) || 0);
                 return `
                   <tr>
-                    <td style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">
+                    <td data-label="Date & Time" style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">
                       ${formatDateTime(item.timestamp)}
                     </td>
-                    <td style="font-weight:700;">${item.product_name}</td>
-                    <td class="num" style="text-align:right;color:var(--text-muted);">${formatRM(item.previous_cost)}</td>
-                    <td class="num" style="text-align:right;font-weight:700;color:var(--color-brown);">${formatRM(item.new_cost)}</td>
-                    <td class="num" style="text-align:right;font-weight:600;color:${diff > 0 ? 'var(--color-danger)' : 'var(--color-success)'};">
+                    <td data-label="Product" style="font-weight:700;">${item.product_name}</td>
+                    <td data-label="Old Cost" class="num" style="text-align:right;color:var(--text-muted);">${formatRM(item.previous_cost)}</td>
+                    <td data-label="New Cost" class="num" style="text-align:right;font-weight:700;color:var(--color-brown);">${formatRM(item.new_cost)}</td>
+                    <td data-label="Change" class="num" style="text-align:right;font-weight:600;color:${diff > 0 ? 'var(--color-danger)' : 'var(--color-success)'};">
                       ${diff > 0 ? `+${formatRM(diff)}` : `-${formatRM(Math.abs(diff))}`}
                     </td>
-                    <td style="font-size:0.82rem;color:var(--text-muted);">${item.notes || '-'}</td>
+                    <td data-label="Notes" style="font-size:0.82rem;color:var(--text-muted);">${item.notes || '-'}</td>
                   </tr>
                 `;
               }).join('')}
@@ -4950,7 +5264,9 @@ function renderCostHistory(costHistory) {
 }
 
 
-// === Module: Muki Stall Manager/js/components/backup.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/components/backup.js
+// ==========================================
 /**
  * Backup, Restore, and GitHub Cloud Sync View Component
  * JSON export/import with pre-validation, CSV exports, and 1-click GitHub Gist Cloud Sync.
@@ -5156,7 +5472,9 @@ function renderBackup() {
 }
 
 
-// === Module: Muki Stall Manager/js/app.js ===
+// ==========================================
+// Module: Muki Stall Manager/js/app.js
+// ==========================================
 /**
  * Main Application Controller & Router
  * Wires reactive state, responsive layout, navigation, modals, and user interactions.
@@ -5343,6 +5661,16 @@ function attachEventListeners() {
   }
 
   // --- POS Interactions ---
+  // Mobile tab switcher: Products vs Cart
+  appRoot.querySelectorAll('[data-action="pos-set-mobile-tab"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const targetTab = btn.getAttribute('data-tab') || 'catalog';
+      setPosMobileTab(targetTab);
+      renderApp();
+    });
+  });
+
   // Category filter
   appRoot.querySelectorAll('[data-action="pos-filter-cat"]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -5454,6 +5782,7 @@ function attachEventListeners() {
           customDiscount: totalDiscount
         });
 
+        setPosMobileTab('catalog');
         showToast(`Order ${newOrder.order_number} completed successfully!`, 'success');
         openOrderReceiptModal(newOrder);
       } catch (err) {
@@ -6929,6 +7258,7 @@ if (document.readyState === 'loading') {
 
 
 })();
+
   </script>
 </body>
 </html>
