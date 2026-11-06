@@ -3,12 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#936653">
+  <meta name="theme-color" content="#f8f6f3">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Muki POS">
-  <title>Muki Stall Manager — Sales & Inventory POS</title>
-  
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Muki Stall Manager — Sales &amp; Inventory POS</title>
+
+  <!-- PWA Icons -->
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+  <link rel="icon" type="image/png" href="Muki.png">
+
   <style>
 /* =========================================================
    Muki Stall Manager — Brand Theme
@@ -690,49 +697,141 @@ h1.page-title {
   color: var(--color-brown-dark);
 }
 
-/* Responsive */
+/* =========================================================
+   RESPONSIVE — TABLET & MOBILE
+   ========================================================= */
+
 @media (max-width: 1024px) {
   .pos-layout {
     grid-template-columns: 1fr 360px;
   }
 }
 
+/* ---- MOBILE (≤ 768px) ---- */
 @media (max-width: 768px) {
-  .sidebar {
-    display: none;
+  :root {
+    --bottom-nav-height: 68px;
+    --header-height: 54px;
   }
+
+  /* Hide desktop sidebar, show mobile chrome */
+  .sidebar { display: none; }
+  .top-header { display: flex; }
+  .bottom-nav { display: flex; }
 
   .main-wrapper {
     margin-left: 0;
     padding-bottom: var(--bottom-nav-height);
   }
 
-  .top-header {
-    display: flex;
-  }
-
-  .bottom-nav {
-    display: flex;
-  }
-
   .main-content {
-    padding: 16px 14px 28px 14px;
+    padding: 14px 12px 24px 12px;
   }
 
+  /* ---- Typography scaling ---- */
+  h1.page-title { font-size: 1.3rem; }
+  .page-subtitle { font-size: 0.82rem; }
+  .page-header-row { margin-bottom: 14px; gap: 10px; }
+
+  /* ---- Cards ---- */
+  .card { padding: 14px; }
+  .card-title { font-size: 0.95rem; }
+
+  /* ---- Grids collapse to 1-column ---- */
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; gap: 12px; }
+
+  /* ---- Tables: horizontal scroll + bigger tap targets ---- */
+  .table td, .table th { padding: 10px 10px; font-size: 0.82rem; }
+  .table-container { -webkit-overflow-scrolling: touch; }
+
+  /* ---- Buttons: bigger touch targets on mobile ---- */
+  .btn { min-height: 44px; font-size: 0.88rem; }
+  .btn-sm { min-height: 36px; padding: 6px 12px; font-size: 0.78rem; }
+  .btn-lg { min-height: 52px; }
+
+  /* ---- Forms: larger inputs for fat fingers ---- */
+  .form-input, .form-select, .form-textarea {
+    padding: 11px 12px;
+    font-size: 16px; /* prevents iOS auto-zoom on focus */
+    min-height: 44px;
+  }
+
+  /* ---- POS: stack catalog + cart vertically ---- */
   .pos-layout {
     display: flex;
     flex-direction: column;
     height: auto;
+    gap: 0;
+  }
+
+  .pos-catalog {
+    height: auto;
+    overflow: visible;
   }
 
   .pos-cart-panel {
     height: auto;
-    max-height: 520px;
-    margin-top: 16px;
+    max-height: 480px;
+    margin-top: 12px;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
   }
 
-  .grid-2, .grid-3, .grid-4 {
-    grid-template-columns: 1fr;
+  /* POS product grid: 2 columns on phone */
+  .pos-product-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    overflow-y: visible;
+    padding-bottom: 10px;
+  }
+
+  .product-tap-card {
+    min-height: 100px;
+    padding: 10px;
+  }
+
+  /* ---- Modals: slide up from bottom on mobile ---- */
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-card {
+    max-width: 100%;
+    max-height: 90vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    width: 100%;
+  }
+
+  .modal-body { padding: 18px 16px; }
+  .modal-header { padding: 16px; }
+  .modal-footer { padding: 14px 16px; }
+
+  /* ---- Bottom nav: bigger icons + labels ---- */
+  .bottom-nav {
+    height: var(--bottom-nav-height);
+    padding: 4px 0 6px 0;
+    gap: 0;
+    padding-bottom: env(safe-area-inset-bottom, 6px);
+  }
+
+  .bottom-nav-item {
+    flex: 1;
+    padding: 4px 2px;
+    font-size: 0.65rem;
+    gap: 3px;
+  }
+
+  /* ---- Top header ---- */
+  .top-header {
+    height: var(--header-height);
+    padding: 8px 14px;
+    padding-top: max(8px, env(safe-area-inset-top, 8px));
+  }
+
+  /* ---- Dashboard stat cards: 2-column grid ---- */
+  .dashboard-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px;
   }
 }
 
@@ -753,17 +852,15 @@ h1.page-title {
 
   <div id="app">
     <div style="display:flex;height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:#936653;padding:20px;text-align:center;background:#f8f6f3;">
-      <img src="Muki.png" alt="Muki" style="height:60px;width:auto;object-fit:contain;margin-bottom:6px;" onerror="this.style.display='none'">
-      <div style="font-weight:800;font-size:1.6rem;letter-spacing:-0.03em;color:#936653;">MUKI STALL MANAGER</div>
-      <div style="font-size:0.9rem;color:#a78170;">Loading database & local inventory...</div>
+      <img src="Muki.png" alt="Muki" style="height:72px;width:auto;object-fit:contain;margin-bottom:4px;" onerror="this.style.display='none'">
+      <div style="font-weight:800;font-size:1.5rem;letter-spacing:-0.03em;color:#936653;">MUKI STALL MANAGER</div>
+      <div style="font-size:0.88rem;color:#a78170;">Loading database &amp; local inventory...</div>
     </div>
   </div>
 
   <script>
 (function() {
-// ==========================================
-// Module: Muki Stall Manager/js/utils/format.js
-// ==========================================
+// === Module: Muki Stall Manager/js/utils/format.js ===
 /**
  * Formatting and Math Utilities
  * Consistent RM currency formatting, dates, math rounding, and sequential order numbers.
@@ -839,9 +936,7 @@ function generateOrderNumber(sequence = 1) {
 }
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/components/icons.js
-// ==========================================
+// === Module: Muki Stall Manager/js/components/icons.js ===
 /**
  * Minimalist SVG Icons
  * Zero-dependency, offline-ready vector icons with stroke-width: 1.75
@@ -886,9 +981,7 @@ function renderIcon(name, size = 18, className = '') {
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/seedData.js
-// ==========================================
+// === Module: Muki Stall Manager/js/seedData.js ===
 /**
  * Initial Sample Data for Muki Stall Manager
  * Auto-seeded when database is first created.
@@ -1069,9 +1162,7 @@ const INITIAL_SETTINGS = [
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/db.js
-// ==========================================
+// === Module: Muki Stall Manager/js/db.js ===
 /**
  * IndexedDB Database Layer for Muki Stall Manager
  * Pure browser-native, reliable, persistent local storage.
@@ -1421,23 +1512,13 @@ async function runTransaction(storeNames, mode, fn) {
 
 
 
-// Explicit database adapter namespace for bundled runtime
 const db = {
-  openDatabase,
-  getAll,
-  getById,
-  putItem,
-  addItem,
-  deleteItem,
-  clearStore,
-  bulkPut,
-  runTransaction
+  openDatabase, getAll, getById, putItem, addItem,
+  deleteItem, clearStore, bulkPut, runTransaction
 };
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/store.js
-// ==========================================
+// === Module: Muki Stall Manager/js/store.js ===
 /**
  * Central Reactive Store
  * Manages in-memory cache synchronized with IndexedDB and dispatches change events.
@@ -1801,9 +1882,7 @@ const store = new AppStore();
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/services/inventory.js
-// ==========================================
+// === Module: Muki Stall Manager/js/services/inventory.js ===
 /**
  * Inventory Service
  * Handles component-based bundle deductions, stock adjustments, recipe management, and audit trails.
@@ -2030,9 +2109,7 @@ async function saveRecipe(parentProductId, components) {
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/services/promotions.js
-// ==========================================
+// === Module: Muki Stall Manager/js/services/promotions.js ===
 /**
  * Promotions Service
  * Evaluates bundle promos, discount rules, and tracks promo usage counts.
@@ -2160,9 +2237,7 @@ async function togglePromotionActive(promoId) {
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/services/sales.js
-// ==========================================
+// === Module: Muki Stall Manager/js/services/sales.js ===
 /**
  * Sales / POS Service
  * Handles order checkout, cost snapshots, profit calculations, inventory deductions, and order cancellations.
@@ -2390,9 +2465,7 @@ async function updateProductCost(productId, newCost, notes = '') {
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/services/backup.js
-// ==========================================
+// === Module: Muki Stall Manager/js/services/backup.js ===
 /**
  * Backup and Restore Service
  * Full JSON snapshot export/import and CSV for spreadsheets.
@@ -2647,9 +2720,7 @@ function triggerFileDownload(blob, filename) {
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/services/githubSync.js
-// ==========================================
+// === Module: Muki Stall Manager/js/services/githubSync.js ===
 /**
  * GitHub Gist Cloud Sync Service
  * Allows solo stall owners to sync data between iPad and computer with 1 click.
@@ -2916,9 +2987,7 @@ async function pullFromGitHub() {
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/utils/testScenarios.js
-// ==========================================
+// === Module: Muki Stall Manager/js/utils/testScenarios.js ===
 /**
  * Automated Test Suite for 10 Required Test Scenarios
  * Validates inventory deductions, bundle recipes, cost snapshots, cancellations, profit, and backup/restore.
@@ -3155,9 +3224,7 @@ async function runAllTests() {
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/components/navbar.js
-// ==========================================
+// === Module: Muki Stall Manager/js/components/navbar.js ===
 /**
  * Navigation Component
  * Provides responsive sidebar for desktop/iPad and bottom-bar/header for mobile.
@@ -3216,22 +3283,22 @@ function renderTopHeader(currentView) {
   const currentItem = NAV_ITEMS.find(i => i.id === currentView) || NAV_ITEMS[0];
   return `
     <header class="top-header">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <img src="Muki.png" alt="Muki" style="height:30px;width:auto;object-fit:contain;" onerror="this.style.display='none'">
-        <span style="font-weight:700;font-size:1.05rem;">Muki Stall</span>
-        <span style="font-size:0.8rem;color:var(--text-muted);border-left:1px solid var(--border-light);padding-left:10px;">
-          ${currentItem.label}
-        </span>
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+        <img src="Muki.png" alt="Muki" style="height:32px;width:auto;object-fit:contain;flex-shrink:0;" onerror="this.style.display='none'">
+        <div style="display:flex;flex-direction:column;min-width:0;">
+          <span style="font-weight:800;font-size:0.95rem;letter-spacing:-0.01em;line-height:1.1;white-space:nowrap;color:var(--color-brown-dark);">MUKI POS</span>
+          <span style="font-size:0.72rem;color:var(--text-muted);font-weight:600;white-space:nowrap;">${currentItem.label}</span>
+        </div>
       </div>
-      <div style="display:flex;gap:8px;">
+      <div style="display:flex;gap:7px;flex-shrink:0;">
         ${store.settings?.github_token ? `
-          <button type="button" class="btn btn-sm btn-secondary" data-action="quick-github-upload" title="Sync & Upload to GitHub">
-            ${renderIcon('upload', 14)}
+          <button type="button" class="btn btn-sm btn-secondary" data-action="quick-github-upload" title="Sync &amp; Upload to GitHub" style="padding:5px 10px;">
+            ${renderIcon('upload', 15)}
             <span>Sync</span>
           </button>
         ` : ''}
-        <button type="button" class="btn btn-sm btn-secondary" data-action="quick-pos">
-          ${renderIcon('pos', 14)}
+        <button type="button" class="btn btn-sm btn-primary" data-action="quick-pos" style="padding:5px 12px;">
+          ${renderIcon('pos', 15)}
           <span>POS</span>
         </button>
       </div>
@@ -3240,23 +3307,22 @@ function renderTopHeader(currentView) {
 }
 
 function renderBottomNav(currentView) {
-  // Mobile quick items
   const mobileItems = [
     { id: 'pos', label: 'POS', icon: 'pos' },
     { id: 'dashboard', label: 'Overview', icon: 'dashboard' },
     { id: 'dailyRecords', label: 'Records', icon: 'dailyRecords' },
     { id: 'inventory', label: 'Stock', icon: 'inventory' },
-    { id: 'more', label: 'Menu', icon: 'products' }
+    { id: 'more', label: 'More', icon: 'products' }
   ];
 
   return `
     <nav class="bottom-nav">
       ${mobileItems.map(item => `
-        <button type="button" 
-          class="bottom-nav-item ${currentView === item.id ? 'active' : ''}" 
+        <button type="button"
+          class="bottom-nav-item ${currentView === item.id ? 'active' : ''}"
           data-view="${item.id}"
           style="background:none;border:none;cursor:pointer;">
-          ${renderIcon(item.icon, 18)}
+          ${renderIcon(item.icon, 22)}
           <span>${item.label}</span>
         </button>
       `).join('')}
@@ -3266,9 +3332,7 @@ function renderBottomNav(currentView) {
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/components/dashboard.js
-// ==========================================
+// === Module: Muki Stall Manager/js/components/dashboard.js ===
 /**
  * Dashboard View Component
  * Clean, essential stall overview: Today's KPIs, current remaining stock, and recent sales.
@@ -3467,9 +3531,7 @@ function renderDashboard() {
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/components/pos.js
-// ==========================================
+// === Module: Muki Stall Manager/js/components/pos.js ===
 /**
  * Point of Sale (POS) Component
  * Touch-optimized stall checkout with dynamic categories, editable prices, custom discount input,
@@ -3819,9 +3881,7 @@ function renderPos() {
 }
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/components/promotions.js
-// ==========================================
+// === Module: Muki Stall Manager/js/components/promotions.js ===
 /**
  * Bundle & Promotion Management View Component
  * Manage bundle promotions, pricing rules, validity dates, component requirements, and usage counters.
@@ -3953,9 +4013,7 @@ function renderPromotions() {
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/components/dailyRecords.js
-// ==========================================
+// === Module: Muki Stall Manager/js/components/dailyRecords.js ===
 /**
  * Daily Records Component
  * Date-based history with daily financial summaries (Revenue, COGS, Gross Profit, Expenses, Net Profit),
@@ -4307,9 +4365,7 @@ function renderDailyRecords() {
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/components/inventory.js
-// ==========================================
+// === Module: Muki Stall Manager/js/components/inventory.js ===
 /**
  * Inventory Management View Component
  * Component recipes, physical stock levels, assembled capacity, stock adjustments, and full audit logs.
@@ -4547,9 +4603,7 @@ function renderMovementsTab(movements, products) {
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/components/expenses.js
-// ==========================================
+// === Module: Muki Stall Manager/js/components/expenses.js ===
 /**
  * Expenses Management View Component
  * Record and track stall operating expenses (Stall rental, Transportation, Packaging, Printing, Other)
@@ -4680,9 +4734,7 @@ function renderExpenses() {
 
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/components/products.js
-// ==========================================
+// === Module: Muki Stall Manager/js/components/products.js ===
 /**
  * Products & Settings View Component
  * Add/edit products, dynamic categories management, cost changes, and enable/disable items.
@@ -4898,9 +4950,7 @@ function renderCostHistory(costHistory) {
 }
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/components/backup.js
-// ==========================================
+// === Module: Muki Stall Manager/js/components/backup.js ===
 /**
  * Backup, Restore, and GitHub Cloud Sync View Component
  * JSON export/import with pre-validation, CSV exports, and 1-click GitHub Gist Cloud Sync.
@@ -5106,9 +5156,7 @@ function renderBackup() {
 }
 
 
-// ==========================================
-// Module: Muki Stall Manager/js/app.js
-// ==========================================
+// === Module: Muki Stall Manager/js/app.js ===
 /**
  * Main Application Controller & Router
  * Wires reactive state, responsive layout, navigation, modals, and user interactions.
@@ -5234,30 +5282,36 @@ function renderApp() {
 }
 
 function renderMobileMoreMenu() {
+  const menuItems = [
+    { target: 'promotions', icon: 'promotions', label: 'Bundle Promotions',   desc: 'Manage bundle deals & discounts' },
+    { target: 'expenses',   icon: 'expenses',   label: 'Operating Expenses',  desc: 'Record stall running costs' },
+    { target: 'products',   icon: 'products',   label: 'Products & Settings', desc: 'Edit prices, costs & reorder' },
+    { target: 'backup',     icon: 'backup',     label: 'Backup & Sync',       desc: 'GitHub cloud sync & local backup' },
+  ];
+
   return `
     <div>
-      <h1 class="page-title" style="margin-bottom:16px;">More Management</h1>
+      <div class="page-header-row" style="margin-bottom:16px;">
+        <div>
+          <h1 class="page-title">More</h1>
+          <div class="page-subtitle">Management &amp; settings</div>
+        </div>
+      </div>
       <div style="display:flex;flex-direction:column;gap:10px;">
-        <button type="button" class="btn btn-secondary btn-lg" style="justify-content:flex-start;" data-action="switch-view" data-target="promotions">
-          ${renderIcon('promotions', 20)}
-          <span>Bundle Promotions</span>
-        </button>
-        <button type="button" class="btn btn-secondary btn-lg" style="justify-content:flex-start;" data-action="switch-view" data-target="expenses">
-          ${renderIcon('expenses', 20)}
-          <span>Operating Expenses</span>
-        </button>
-        <button type="button" class="btn btn-secondary btn-lg" style="justify-content:flex-start;" data-action="switch-view" data-target="products">
-          ${renderIcon('products', 20)}
-          <span>Products & Settings</span>
-        </button>
-        <button type="button" class="btn btn-secondary btn-lg" style="justify-content:flex-start;" data-action="switch-view" data-target="backup">
-          ${renderIcon('backup', 20)}
-          <span>Backup & Restore</span>
-        </button>
-        <button type="button" class="btn btn-secondary btn-lg" style="justify-content:flex-start;" data-action="open-test-suite">
-          ${renderIcon('checkCircle', 20)}
-          <span>Run System Verification Tests</span>
-        </button>
+        ${menuItems.map(item => `
+          <button type="button" class="btn btn-secondary"
+            style="justify-content:flex-start;text-align:left;padding:14px 16px;height:auto;gap:14px;width:100%;border-radius:var(--radius-md);"
+            data-action="switch-view" data-target="${item.target}">
+            <span style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;background:var(--bg-secondary);border-radius:var(--radius-md);flex-shrink:0;">
+              ${renderIcon(item.icon, 20)}
+            </span>
+            <span style="display:flex;flex-direction:column;gap:1px;flex:1;min-width:0;">
+              <span style="font-weight:700;font-size:0.95rem;color:var(--color-brown-dark);">${item.label}</span>
+              <span style="font-size:0.78rem;color:var(--text-muted);font-weight:400;">${item.desc}</span>
+            </span>
+            <span style="color:var(--text-light);font-size:1.2rem;font-weight:300;">›</span>
+          </button>
+        `).join('')}
       </div>
     </div>
   `;
