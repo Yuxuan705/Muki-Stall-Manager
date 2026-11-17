@@ -1953,7 +1953,7 @@ class AppStore {
 
   // --- Operating Expenses Categories Management ---
   getExpenseCategories() {
-    const defaultExpenseCats = ['Stall rental', 'Transportation', 'Packaging', 'Printing', 'Other'];
+    const defaultExpenseCats = ['Stall rental', 'Transportation', 'Packaging', 'Printing', 'Defect & Wastage', 'Other'];
     const custom = this.settings.custom_expense_categories;
     if (Array.isArray(custom) && custom.length > 0) {
       return custom;
@@ -2037,20 +2037,25 @@ class AppStore {
 
   // --- Cart Management for POS ---
 
-  addToCart(productId, quantity = 1) {
+  addToCart(productId, quantity = 1, isFreeGift = false) {
     const product = this.products.find(p => p.id === productId);
     if (!product) return false;
 
-    const existingIndex = this.cart.findIndex(item => item.productId === productId);
+    // Check if an existing line with matching free gift status exists
+    const existingIndex = this.cart.findIndex(item => item.productId === productId && Boolean(item.isFreeGift) === Boolean(isFreeGift));
     if (existingIndex >= 0) {
       this.cart[existingIndex].quantity += quantity;
     } else {
+      const cartItemId = 'citem_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
       this.cart.push({
+        cartItemId,
         productId,
         product,
         quantity,
-        unitPrice: Number(product.selling_price) || 0,
-        unitCost: this.getComputedCost(productId)
+        unitPrice: isFreeGift ? 0 : (Number(product.selling_price) || 0),
+        unitCost: this.getComputedCost(productId),
+        isCustomPrice: Boolean(isFreeGift),
+        isFreeGift: Boolean(isFreeGift)
       });
     }
 
@@ -2058,37 +2063,60 @@ class AppStore {
     return true;
   }
 
-  updateCartQty(productId, delta) {
-    const item = this.cart.find(i => i.productId === productId);
+  addFreeGiftToCart(productId, quantity = 1) {
+    return this.addToCart(productId, quantity, true);
+  }
+
+  toggleCartItemGift(identifier) {
+    const item = this.cart.find(i => i.cartItemId === identifier || i.productId === identifier);
+    if (!item) return;
+
+    if (item.isFreeGift) {
+      item.isFreeGift = false;
+      item.isCustomPrice = false;
+      item.unitPrice = Number(item.product?.selling_price) || 0;
+    } else {
+      item.isFreeGift = true;
+      item.isCustomPrice = true;
+      item.unitPrice = 0;
+    }
+    this.notify('cart', this.cart);
+  }
+
+  updateCartQty(identifier, delta) {
+    const item = this.cart.find(i => i.cartItemId === identifier || i.productId === identifier);
     if (!item) return;
 
     item.quantity += delta;
     if (item.quantity <= 0) {
-      this.removeFromCart(productId);
+      this.removeFromCart(identifier);
     } else {
       this.notify('cart', this.cart);
     }
   }
 
-  setCartQty(productId, exactQty) {
-    const item = this.cart.find(i => i.productId === productId);
+  setCartQty(identifier, exactQty) {
+    const item = this.cart.find(i => i.cartItemId === identifier || i.productId === identifier);
     if (!item) return;
 
     const qty = parseInt(exactQty, 10);
     if (isNaN(qty) || qty <= 0) {
-      this.removeFromCart(productId);
+      this.removeFromCart(identifier);
     } else {
       item.quantity = qty;
       this.notify('cart', this.cart);
     }
   }
 
-  updateCartItemPrice(productId, newPrice) {
-    const item = this.cart.find(i => i.productId === productId);
+  updateCartItemPrice(identifier, newPrice) {
+    const item = this.cart.find(i => i.cartItemId === identifier || i.productId === identifier);
     if (!item) return;
     const parsed = Math.max(0, round(parseFloat(newPrice) || 0));
     item.unitPrice = parsed;
     item.isCustomPrice = true;
+    if (item.isFreeGift && parsed > 0) {
+      item.isFreeGift = false;
+    }
     this.notify('cart', this.cart);
   }
 
@@ -2101,8 +2129,8 @@ class AppStore {
     return this.manualDiscount || 0;
   }
 
-  removeFromCart(productId) {
-    this.cart = this.cart.filter(item => item.productId !== productId);
+  removeFromCart(identifier) {
+    this.cart = this.cart.filter(item => item.cartItemId !== identifier && item.productId !== identifier);
     this.notify('cart', this.cart);
   }
 
@@ -2264,7 +2292,7 @@ async function restoreStockForCancelledOrder(order) {
 /**
  * Manual stock adjustment with audit logging
  */
-async function adjustStock({ productId, adjustmentType, quantity, notes }) {
+async function adjustStock({ productId, adjustmentType, quantity, notes, recordAsExpense = false, lossAmount = 0 }) {
   const product = await db.getById('products', productId);
   if (!product) throw new Error('Product not found.');
 
@@ -2280,7 +2308,7 @@ async function adjustStock({ productId, adjustmentType, quantity, notes }) {
       delta = numQty;
       newStock = previousStock + numQty;
       break;
-    case 'damaged': // Damaged item (-)
+    case 'damaged': // Damaged item / production defect (-)
       delta = -numQty;
       newStock = previousStock - numQty;
       break;
@@ -2300,6 +2328,23 @@ async function adjustStock({ productId, adjustmentType, quantity, notes }) {
   product.updated_at = timestamp;
   await db.putItem('products', product);
 
+  const unitCost = Number(product.cost) || 0;
+  const computedLoss = Math.round(((Number(lossAmount) || (numQty * unitCost))) * 100) / 100;
+
+  // If damaged or missing and recordAsExpense is enabled, automatically log to Operating Expenses
+  if ((adjustmentType === 'damaged' || adjustmentType === 'missing') && recordAsExpense && computedLoss > 0) {
+    const today = new Date().toISOString().split('T')[0];
+    await db.addItem('expenses', {
+      id: generateId('exp'),
+      date: today,
+      name: `Wastage: ${numQty}x ${product.name}`,
+      category: 'Defect & Wastage',
+      amount: computedLoss,
+      notes: notes ? `${notes} (Damage deduction: -${numQty} pcs @ RM${unitCost.toFixed(2)}/ea)` : `Production/stall damage loss: -${numQty} pcs @ RM${unitCost.toFixed(2)}/ea`,
+      created_at: timestamp
+    });
+  }
+
   await db.addItem('stock_movements', {
     id: generateId('smov'),
     product_id: productId,
@@ -2310,12 +2355,13 @@ async function adjustStock({ productId, adjustmentType, quantity, notes }) {
     reason: adjustmentType,
     order_id: null,
     order_number: null,
+    loss_amount: (adjustmentType === 'damaged' || adjustmentType === 'missing') ? computedLoss : 0,
     notes: notes || `Manual stock adjustment (${adjustmentType})`,
     timestamp
   });
 
   await store.refreshAll();
-  return { previousStock, newStock, delta };
+  return { previousStock, newStock, delta, loss: computedLoss };
 }
 
 /**
@@ -2420,6 +2466,34 @@ function calculatePromotionDiscount(promo, cartItems, cartSubtotal) {
   if (promo.type === 'percent_discount') {
     const pct = Number(promo.value) || 0;
     return round((cartSubtotal * pct) / 100);
+  }
+
+  // Spend threshold discount (e.g. Spend RM200 get RM20 off or 10% off)
+  if (promo.type === 'spend_threshold_discount') {
+    const minSpend = Number(promo.min_spend) || 0;
+    if (cartSubtotal >= minSpend) {
+      if (promo.discount_type === 'percent') {
+        const pct = Number(promo.value) || 0;
+        return round((cartSubtotal * pct) / 100);
+      } else {
+        const val = Number(promo.value) || 0;
+        return round(Math.min(cartSubtotal, val));
+      }
+    }
+    return 0;
+  }
+
+  // Spend threshold free gift (e.g. Spend RM200 get free gift)
+  if (promo.type === 'spend_threshold_gift') {
+    const minSpend = Number(promo.min_spend) || 0;
+    if (cartSubtotal >= minSpend) {
+      // If the gift product is in cart at full price (not already RM0), discount one of it
+      const giftItem = cartItems.find(i => (i.productId || i.product_id) === promo.gift_product_id && !i.isFreeGift);
+      if (giftItem) {
+        return round(Number(giftItem.unitPrice) || 0);
+      }
+    }
+    return 0;
   }
 
   return 0;
@@ -2535,7 +2609,8 @@ async function createOrder({ cartItems, paymentMethod = 'Cash', paymentNotes = '
 
     const itemsSnapshot = cartItems.map(item => {
       const prod = store.products.find(p => p.id === (item.productId || item.product_id));
-      const unitPrice = Number(item.unitPrice ?? prod?.selling_price ?? 0);
+      const isGift = Boolean(item.isFreeGift);
+      const unitPrice = isGift ? 0 : Number(item.unitPrice ?? prod?.selling_price ?? 0);
       const unitCost = Number(item.unitCost ?? store.getComputedCost(prod?.id) ?? 0);
       const qty = Number(item.quantity || item.qty) || 1;
 
@@ -2553,7 +2628,8 @@ async function createOrder({ cartItems, paymentMethod = 'Cash', paymentNotes = '
         unitPrice: round(unitPrice),
         unitCost: round(unitCost),
         subtotal: itemSubtotal,
-        costSubtotal: itemCostTotal
+        costSubtotal: itemCostTotal,
+        isFreeGift: isGift
       };
     });
 
@@ -3878,6 +3954,13 @@ function renderPos() {
   const activePromos = store.promotions.filter(p => isPromotionValid(p));
   const currentPromo = activePromos.find(p => p.id === selectedPromotionId) || null;
 
+  // Check if any spend threshold promo is qualified (e.g. Spend RM200 Get Gift/Discount)
+  const qualifiedThresholdPromo = activePromos.find(p => 
+    (p.type === 'spend_threshold_gift' || p.type === 'spend_threshold_discount') && 
+    cartSubtotal >= (Number(p.min_spend) || 0) &&
+    (Number(p.min_spend) || 0) > 0
+  );
+
   // Calculate promo discount + manual discount
   let promoDiscount = 0;
   if (currentPromo) {
@@ -4002,12 +4085,16 @@ function renderPos() {
             ${renderIcon('pos', 18)}
             <span style="font-weight:700;font-size:1rem;color:var(--color-brown-dark);">Current Cart</span>
           </div>
-          ${store.cart.length > 0 ? `
-            <button type="button" class="btn btn-sm btn-secondary" data-action="pos-clear-cart" style="color:var(--color-danger);">
-              ${renderIcon('trash', 14)}
-              <span>Clear</span>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button type="button" class="btn btn-sm btn-secondary" data-action="pos-open-add-gift-modal" title="Add free customer gift" style="font-size:0.75rem;padding:3px 8px;border-radius:14px;color:var(--color-brown-dark);font-weight:700;background:var(--bg-secondary);">
+              🎁 Add Gift
             </button>
-          ` : ''}
+            ${store.cart.length > 0 ? `
+              <button type="button" class="btn btn-sm btn-secondary" data-action="pos-clear-cart" style="color:var(--color-danger);padding:3px 8px;">
+                ${renderIcon('trash', 14)}
+              </button>
+            ` : ''}
+          </div>
         </div>
 
         <!-- Cart Items List -->
@@ -4022,17 +4109,30 @@ function renderPos() {
             <div style="display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                 <div style="flex:1;padding-right:8px;">
-                  <div style="font-weight:700;font-size:0.92rem;color:var(--color-brown-dark);">${item.product?.name || item.name}</div>
+                  <div style="font-weight:700;font-size:0.92rem;color:var(--color-brown-dark);display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
+                    <span>${item.product?.name || item.name}</span>
+                    ${item.isFreeGift ? '<span class="badge" style="background:var(--color-orange);color:#fff;font-size:0.65rem;font-weight:700;padding:1px 6px;">🎁 Free Gift</span>' : ''}
+                  </div>
                   
-                  <!-- Editable Price on the fly -->
-                  <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+                  <!-- Editable Price on the fly & Free Gift Button -->
+                  <div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap;">
                     <span style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">Price RM</span>
                     <input type="number" step="0.10" class="form-input number-input cart-item-price-input" 
+                      data-cart-item-id="${item.cartItemId || item.productId}"
                       data-product-id="${item.productId}" 
                       value="${item.unitPrice}" 
                       title="Click to edit unit price (special offer)"
-                      style="width:78px;padding:2px 6px;font-size:0.85rem;height:26px;border-color:${item.isCustomPrice ? 'var(--color-orange)' : 'var(--border-light)'};background:#fff;">
-                    ${item.isCustomPrice ? '<span class="badge badge-bundle" style="font-size:0.65rem;padding:1px 5px;">Custom Price</span>' : ''}
+                      style="width:70px;padding:2px 6px;font-size:0.85rem;height:26px;border-color:${item.isFreeGift ? 'var(--color-orange)' : item.isCustomPrice ? 'var(--color-orange)' : 'var(--border-light)'};background:#fff;">
+                    
+                    <button type="button" class="btn btn-sm ${item.isFreeGift ? 'btn-primary' : 'btn-secondary'}" 
+                      data-action="pos-toggle-gift" 
+                      data-cart-item-id="${item.cartItemId || item.productId}"
+                      title="${item.isFreeGift ? 'Free Gift (Price RM0)' : 'Mark as Free Gift'}"
+                      style="padding:2px 8px;font-size:0.72rem;height:26px;border-radius:13px;display:inline-flex;align-items:center;gap:3px;${item.isFreeGift ? 'background:var(--color-orange);border-color:var(--color-orange);color:#fff;font-weight:700;' : ''}">
+                      <span>🎁 ${item.isFreeGift ? 'Gift (RM0)' : 'Gift'}</span>
+                    </button>
+
+                    ${item.isCustomPrice && !item.isFreeGift ? '<span class="badge badge-bundle" style="font-size:0.65rem;padding:1px 5px;">Custom Price</span>' : ''}
                   </div>
                 </div>
 
@@ -4059,6 +4159,19 @@ function renderPos() {
 
         <!-- Checkout Summary & Action Footer -->
         <div style="padding:14px 16px;border-top:1px solid var(--border-light);background-color:var(--color-white);">
+          ${qualifiedThresholdPromo ? `
+            <div style="margin-bottom:10px;background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-md);padding:8px 10px;display:flex;justify-content:space-between;align-items:center;gap:6px;">
+              <div style="font-size:0.8rem;color:#92400e;line-height:1.25;">
+                <span style="font-weight:700;">🎉 Offer Unlocked (Min RM${qualifiedThresholdPromo.min_spend})!</span><br>
+                <span>${qualifiedThresholdPromo.name}</span>
+              </div>
+              ${qualifiedThresholdPromo.type === 'spend_threshold_gift' && qualifiedThresholdPromo.gift_product_id ? `
+                <button type="button" class="btn btn-sm btn-primary" data-action="pos-claim-threshold-gift" data-gift-id="${qualifiedThresholdPromo.gift_product_id}" data-gift-qty="${qualifiedThresholdPromo.gift_quantity || 1}" style="font-size:0.72rem;padding:3px 8px;background:var(--color-orange);border-color:var(--color-orange);white-space:nowrap;font-weight:700;">
+                  🎁 Add Gift
+                </button>
+              ` : ''}
+            </div>
+          ` : ''}
           <!-- Promotion Selector -->
           <div style="margin-bottom:8px;">
             <label class="form-label" style="font-size:0.72rem;margin-bottom:3px;">Preset Promotion / Bundle</label>
@@ -4066,7 +4179,13 @@ function renderPos() {
               <option value="">No preset promotion</option>
               ${activePromos.map(p => `
                 <option value="${p.id}" ${selectedPromotionId === p.id ? 'selected' : ''}>
-                  ${p.name} (${p.type === 'bundle_price' ? `RM${p.price}` : p.type === 'fixed_discount' ? `-RM${p.value}` : `-${p.value}%`})
+                  ${p.name} (${
+                    p.type === 'bundle_price' ? `RM${p.price}` : 
+                    p.type === 'fixed_discount' ? `-RM${p.value}` : 
+                    p.type === 'percent_discount' ? `-${p.value}%` :
+                    p.type === 'spend_threshold_discount' ? `Spend RM${p.min_spend} -${p.discount_type === 'percent' ? p.value + '%' : 'RM' + p.value}` :
+                    `Spend RM${p.min_spend} Free Gift`
+                  })
                 </option>
               `).join('')}
             </select>
@@ -4252,13 +4371,30 @@ function renderPromotions() {
                           ? formatRM(promo.price) 
                           : promo.type === 'fixed_discount' 
                             ? `-${formatRM(promo.value)}` 
-                            : `-${promo.value}%`}
+                            : promo.type === 'percent_discount'
+                              ? `-${promo.value}%`
+                              : promo.type === 'spend_threshold_discount'
+                                ? (promo.discount_type === 'percent' ? `-${promo.value}%` : `-${formatRM(promo.value)}`)
+                                : '🎁 Free Gift'}
                       </div>
                       <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">
-                        ${promo.type === 'bundle_price' ? 'Bundle Price' : 'Discount'}
+                        ${promo.type === 'bundle_price' ? 'Bundle Price' : promo.type === 'spend_threshold_gift' ? `Spend Min RM${promo.min_spend || 0}` : promo.type === 'spend_threshold_discount' ? `Spend Min RM${promo.min_spend || 0}` : 'Discount'}
                       </div>
                     </div>
                   </div>
+
+                  ${promo.type === 'spend_threshold_gift' && promo.gift_product_id ? `
+                    <div style="margin-top:12px;background:#fef3c7;border:1px solid #fde68a;border-radius:var(--radius-md);padding:10px 12px;font-size:0.85rem;color:#92400e;">
+                      🎁 Free Gift: <strong>${store.products.find(p => p.id === promo.gift_product_id)?.name || 'Gift item'}</strong> (x${promo.gift_quantity || 1})
+                      <div style="font-size:0.75rem;color:#b45309;margin-top:2px;">Triggered when customer spends RM${promo.min_spend || 0} or more</div>
+                    </div>
+                  ` : ''}
+
+                  ${promo.type === 'spend_threshold_discount' ? `
+                    <div style="margin-top:12px;background:#fef3c7;border:1px solid #fde68a;border-radius:var(--radius-md);padding:10px 12px;font-size:0.85rem;color:#92400e;">
+                      🏷️ Spend Offer: Spend <strong>RM${promo.min_spend || 0}</strong> and get <strong>${promo.discount_type === 'percent' ? promo.value + '% off' : 'RM' + promo.value + ' off'}</strong>!
+                    </div>
+                  ` : ''}
 
                   <!-- Bundle Components if applicable -->
                   ${promo.bundle_recipe && promo.bundle_recipe.length > 0 ? `
@@ -4710,10 +4846,14 @@ function renderInventory() {
           <h1 class="page-title">Inventory & Stock</h1>
           <div class="page-subtitle">Track physical coin stock, bundle assembly recipes, and inventory movements</div>
         </div>
-        <div style="display:flex;gap:10px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-secondary" data-action="open-record-defect-modal" style="color:var(--color-danger);border-color:#fca5a5;background:#ffffff;font-weight:700;">
+            ${renderIcon('alert', 16)}
+            <span>Record Defect / 制作损耗</span>
+          </button>
           <button type="button" class="btn btn-primary" data-action="open-stock-adjust-modal">
             ${renderIcon('plus', 16)}
-            <span>Adjust Physical Stock</span>
+            <span>Adjust Stock</span>
           </button>
         </div>
       </div>
@@ -4893,8 +5033,9 @@ function renderMovementsTab(movements, products) {
                         m.reason === 'receipt' ? 'badge-active' :
                         'badge-cancelled'
                       }">
-                        ${m.reason}
+                        ${m.reason === 'damaged' ? 'Defect / 损坏' : m.reason}
                       </span>
+                      ${m.loss_amount > 0 ? `<div style="font-size:0.75rem;color:var(--color-danger);font-weight:700;margin-top:2px;">Loss: ${formatRM(m.loss_amount)}</div>` : ''}
                     </td>
                     <td data-label="Notes" style="font-size:0.82rem;color:var(--text-muted);">
                       ${m.order_number ? `Order ${m.order_number}: ` : ''}${m.notes || '-'}
@@ -5174,7 +5315,12 @@ function renderProductList(products) {
                     ${formatRM(p.selling_price)}
                   </td>
                   <td data-label="Unit Cost" class="num" style="text-align:right;color:var(--text-muted);">
-                    ${formatRM(computedCost)}
+                    <div style="font-weight:700;color:var(--text-main);">${formatRM(computedCost)}</div>
+                    ${p.cost_breakdown && p.cost_breakdown.length > 0 ? `
+                      <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);font-size:0.65rem;font-weight:600;padding:1px 5px;margin-top:2px;display:inline-block;cursor:pointer;" data-action="quick-edit-cost" data-product-id="${p.id}" title="Click to view material and packaging breakdown">
+                        📋 ${p.cost_breakdown.length} items
+                      </span>
+                    ` : ''}
                   </td>
                   <td data-label="Stock" class="num" style="text-align:right;font-weight:600;">
                     ${isBundle ? '<span style="color:var(--text-light);font-size:0.8rem;">(Formula)</span>' : (Number(p.stock) || 0)}
@@ -5722,6 +5868,43 @@ function attachEventListeners() {
     clearCartBtn.addEventListener('click', () => store.clearCart());
   }
 
+  // Toggle item as free gift (RM0)
+  appRoot.querySelectorAll('[data-action="pos-toggle-gift"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-cart-item-id') || btn.getAttribute('data-product-id');
+      store.toggleCartItemGift(id);
+    });
+  });
+
+  // Open modal to add a free gift item
+  appRoot.querySelectorAll('[data-action="pos-open-add-gift-modal"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openAddFreeGiftModal();
+    });
+  });
+
+  // Claim spend threshold reward gift
+  appRoot.querySelectorAll('[data-action="pos-claim-threshold-gift"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const giftId = btn.getAttribute('data-gift-id');
+      const qty = parseInt(btn.getAttribute('data-gift-qty'), 10) || 1;
+      if (giftId) {
+        store.addFreeGiftToCart(giftId, qty);
+        showToast('🎁 Free gift added to cart!', 'success');
+      }
+    });
+  });
+
+  // Open Record Defect / Wastage modal
+  appRoot.querySelectorAll('[data-action="open-record-defect-modal"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openRecordDefectModal();
+    });
+  });
+
   // Promotion selector
   const promoSelect = document.getElementById('pos-promo-select');
   if (promoSelect) {
@@ -5795,8 +5978,8 @@ function attachEventListeners() {
   // On-the-fly cart item price modification
   appRoot.querySelectorAll('.cart-item-price-input').forEach(input => {
     input.addEventListener('change', (e) => {
-      const prodId = input.getAttribute('data-product-id');
-      store.updateCartItemPrice(prodId, e.target.value);
+      const id = input.getAttribute('data-cart-item-id') || input.getAttribute('data-product-id');
+      store.updateCartItemPrice(id, e.target.value);
     });
   });
 
@@ -6193,8 +6376,8 @@ function openOrderReceiptModal(order) {
             <div style="border-top:1px dashed #ccc;border-bottom:1px dashed #ccc;padding:8px 0;margin-bottom:10px;">
               ${(order.items || []).map(i => `
                 <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:4px;">
-                  <span>${i.name} × ${i.quantity || i.qty}</span>
-                  <span style="font-family:var(--font-mono);">${formatRM(i.subtotal)}</span>
+                  <span>${i.isFreeGift ? '🎁 [Gift] ' : ''}${i.name} × ${i.quantity || i.qty}</span>
+                  <span style="font-family:var(--font-mono);font-weight:${i.isFreeGift ? '700' : 'normal'};color:${i.isFreeGift ? 'var(--color-orange)' : 'inherit'};">${i.isFreeGift ? 'FREE' : formatRM(i.subtotal)}</span>
                 </div>
               `).join('')}
             </div>
@@ -6432,7 +6615,7 @@ function openStockAdjustModal(preselectedProductId = '') {
 
   container.innerHTML = `
     <div class="modal-overlay">
-      <div class="modal-card" style="max-width:440px;">
+      <div class="modal-card" style="max-width:460px;">
         <div class="modal-header">
           <div class="modal-title">Manual Stock Adjustment</div>
           <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
@@ -6442,8 +6625,8 @@ function openStockAdjustModal(preselectedProductId = '') {
             <label class="form-label">Product</label>
             <select id="adjust-prod-select" class="form-select">
               ${physicalProducts.map(p => `
-                <option value="${p.id}" ${preselectedProductId === p.id ? 'selected' : ''}>
-                  ${p.name} (Current: ${p.stock})
+                <option value="${p.id}" ${preselectedProductId === p.id ? 'selected' : ''} data-cost="${p.cost || 0}">
+                  ${p.name} (Current: ${p.stock} in stock)
                 </option>
               `).join('')}
             </select>
@@ -6453,7 +6636,7 @@ function openStockAdjustModal(preselectedProductId = '') {
             <label class="form-label">Adjustment Type / Reason</label>
             <select id="adjust-type-select" class="form-select">
               <option value="receipt">New stock received (+)</option>
-              <option value="damaged">Damaged item (-)</option>
+              <option value="damaged">Damaged / Defect item (-)</option>
               <option value="missing">Missing stock (-)</option>
               <option value="correction">Stock correction (Set exact quantity)</option>
             </select>
@@ -6461,12 +6644,24 @@ function openStockAdjustModal(preselectedProductId = '') {
 
           <div class="form-group">
             <label class="form-label">Quantity</label>
-            <input type="number" id="adjust-qty-input" class="form-input number-input" min="1" value="10">
+            <input type="number" id="adjust-qty-input" class="form-input number-input" min="1" value="5">
+          </div>
+
+          <!-- Defect Loss preview box -->
+          <div id="adjust-loss-box" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-md);padding:10px 12px;margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span style="font-size:0.8rem;color:#991b1b;font-weight:700;">⚠️ Defect Loss Calculation</span>
+              <span id="adjust-loss-amount" style="font-size:0.95rem;font-weight:800;color:var(--color-danger);font-family:var(--font-mono);">RM 0.00</span>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:#7f1d1d;cursor:pointer;">
+              <input type="checkbox" id="adjust-expense-check" checked>
+              <span>Automatically record loss to Operating Expenses under "Defect & Wastage"</span>
+            </label>
           </div>
 
           <div class="form-group">
             <label class="form-label">Notes (Optional)</label>
-            <input type="text" id="adjust-notes-input" class="form-input" placeholder="e.g. Batch 2 replenishment from printer">
+            <input type="text" id="adjust-notes-input" class="form-input" placeholder="e.g. Production defect / machine damage / replenishment">
           </div>
         </div>
         <div class="modal-footer">
@@ -6480,24 +6675,253 @@ function openStockAdjustModal(preselectedProductId = '') {
   document.getElementById('modal-close-btn').addEventListener('click', closeModal);
   document.getElementById('modal-adjust-abort-btn').addEventListener('click', closeModal);
 
+  const prodSelect = document.getElementById('adjust-prod-select');
+  const typeSelect = document.getElementById('adjust-type-select');
+  const qtyInput = document.getElementById('adjust-qty-input');
+  const lossBox = document.getElementById('adjust-loss-box');
+  const lossAmount = document.getElementById('adjust-loss-amount');
+
+  function updateLossCalc() {
+    const isDamaged = typeSelect.value === 'damaged' || typeSelect.value === 'missing';
+    if (isDamaged) {
+      lossBox.style.display = 'block';
+      const selectedOpt = prodSelect.options[prodSelect.selectedIndex];
+      const unitCost = parseFloat(selectedOpt ? selectedOpt.getAttribute('data-cost') : 0) || 0;
+      const qty = parseInt(qtyInput.value, 10) || 0;
+      const totalLoss = (qty * unitCost).toFixed(2);
+      lossAmount.textContent = `RM ${totalLoss}`;
+    } else {
+      lossBox.style.display = 'none';
+    }
+  }
+
+  typeSelect.addEventListener('change', updateLossCalc);
+  prodSelect.addEventListener('change', updateLossCalc);
+  qtyInput.addEventListener('input', updateLossCalc);
+  updateLossCalc();
+
   document.getElementById('modal-adjust-submit-btn').addEventListener('click', async () => {
-    const prodId = document.getElementById('adjust-prod-select').value;
-    const type = document.getElementById('adjust-type-select').value;
-    const qty = document.getElementById('adjust-qty-input').value;
+    const prodId = prodSelect.value;
+    const type = typeSelect.value;
+    const qty = qtyInput.value;
     const notes = document.getElementById('adjust-notes-input').value;
+    const recordExpense = (type === 'damaged' || type === 'missing') && document.getElementById('adjust-expense-check')?.checked;
 
     try {
-      await adjustStock({
+      const res = await adjustStock({
         productId: prodId,
         adjustmentType: type,
         quantity: qty,
-        notes
+        notes,
+        recordAsExpense: recordExpense
       });
-      showToast('Inventory updated and movement logged.', 'success');
+      if (recordExpense && res.loss > 0) {
+        showToast(`Stock deducted. Loss of RM ${res.loss.toFixed(2)} recorded to Expenses!`, 'success');
+      } else {
+        showToast('Inventory updated and movement logged.', 'success');
+      }
       closeModal();
     } catch (err) {
       alert(`Adjustment failed: ${err.message}`);
     }
+  });
+}
+
+// Dedicated modal for recording production defects and damaged goods
+function openRecordDefectModal(preselectedProductId = '') {
+  const container = document.getElementById('modal-container');
+  if (!container) return;
+
+  const physicalProducts = store.products.filter(p => !store.isBundleProduct(p.id));
+
+  container.innerHTML = `
+    <div class="modal-overlay">
+      <div class="modal-card" style="max-width:480px;">
+        <div class="modal-header">
+          <div class="modal-title" style="display:flex;align-items:center;gap:6px;color:#991b1b;">
+            ${renderIcon('alert', 18)}
+            <span>Record Defect &amp; Wastage Loss</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
+        </div>
+        <div class="modal-body">
+          <div style="font-size:0.84rem;color:var(--text-muted);margin-bottom:14px;line-height:1.4;">
+            Record items damaged or scrapped during production, shipping, or stall display. 
+            This automatically deducts your physical inventory and records the financial loss to Operating Expenses.
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Damaged Product</label>
+            <select id="defect-prod-select" class="form-select">
+              ${physicalProducts.map(p => `
+                <option value="${p.id}" ${preselectedProductId === p.id ? 'selected' : ''} data-cost="${p.cost || 0}">
+                  ${p.name} (Current: ${p.stock} in stock • Cost: RM ${(Number(p.cost)||0).toFixed(2)})
+                </option>
+              `).join('')}
+            </select>
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label class="form-label">Scrapped Quantity</label>
+              <input type="number" id="defect-qty-input" class="form-input number-input" min="1" value="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Defect Category</label>
+              <select id="defect-cat-select" class="form-select">
+                <option value="Production Defect">Production Defect (制作瑕疵 / 印刷问题)</option>
+                <option value="Handling Damage">Handling Damage (机器/外力压坏)</option>
+                <option value="Packaging Defect">Packaging Defect (包装破损)</option>
+                <option value="Sample Scrapped">Display Sample Scrapped (样板报废)</option>
+                <option value="Lost / Other">Other Loss (其他损耗)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Dynamic Loss Calculation Card -->
+          <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-md);padding:12px 14px;margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <div style="font-size:0.75rem;color:#7f1d1d;font-weight:700;text-transform:uppercase;">Calculated Financial Loss</div>
+                <div id="defect-calc-details" style="font-size:0.8rem;color:#991b1b;margin-top:2px;">1 pcs × RM 0.00</div>
+              </div>
+              <div id="defect-total-loss" style="font-size:1.45rem;font-weight:800;color:var(--color-danger);font-family:var(--font-mono);">
+                RM 0.00
+              </div>
+            </div>
+            <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #fca5a5;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:#7f1d1d;cursor:pointer;font-weight:600;">
+                <input type="checkbox" id="defect-expense-checkbox" checked>
+                <span>Automatically record as Operating Expense under "Defect &amp; Wastage"</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Defect Description / Notes</label>
+            <input type="text" id="defect-notes-input" class="form-input" placeholder="e.g. 机器压碎表面 / 掉色瑕疵无法出售">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="modal-defect-abort-btn">Cancel</button>
+          <button type="button" class="btn btn-primary" id="modal-defect-submit-btn" style="background:var(--color-danger);border-color:var(--color-danger);">
+            Confirm Defect &amp; Deduct Stock
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+  document.getElementById('modal-defect-abort-btn').addEventListener('click', closeModal);
+
+  const prodSelect = document.getElementById('defect-prod-select');
+  const qtyInput = document.getElementById('defect-qty-input');
+  const calcDetails = document.getElementById('defect-calc-details');
+  const totalLoss = document.getElementById('defect-total-loss');
+
+  function updateDefectLoss() {
+    const selectedOpt = prodSelect.options[prodSelect.selectedIndex];
+    const unitCost = parseFloat(selectedOpt ? selectedOpt.getAttribute('data-cost') : 0) || 0;
+    const qty = parseInt(qtyInput.value, 10) || 0;
+    const loss = (qty * unitCost).toFixed(2);
+
+    calcDetails.textContent = `${qty} pcs × RM ${unitCost.toFixed(2)}`;
+    totalLoss.textContent = `RM ${loss}`;
+  }
+
+  prodSelect.addEventListener('change', updateDefectLoss);
+  qtyInput.addEventListener('input', updateDefectLoss);
+  updateDefectLoss();
+
+  document.getElementById('modal-defect-submit-btn').addEventListener('click', async () => {
+    const prodId = prodSelect.value;
+    const qty = parseInt(qtyInput.value, 10) || 1;
+    const category = document.getElementById('defect-cat-select').value;
+    const notesInput = document.getElementById('defect-notes-input').value.trim();
+    const recordExpense = document.getElementById('defect-expense-checkbox').checked;
+
+    const notes = category + (notesInput ? `: ${notesInput}` : '');
+
+    try {
+      const res = await adjustStock({
+        productId: prodId,
+        adjustmentType: 'damaged',
+        quantity: qty,
+        notes,
+        recordAsExpense: recordExpense
+      });
+
+      if (recordExpense && res.loss > 0) {
+        showToast(`Defect logged: -${qty} items. RM ${res.loss.toFixed(2)} recorded to Expenses!`, 'success');
+      } else {
+        showToast(`Defect logged: -${qty} items deducted from inventory.`, 'success');
+      }
+      closeModal();
+    } catch (err) {
+      alert(`Could not record defect: ${err.message}`);
+    }
+  });
+}
+
+// Quick modal to select and add any item as a Free Customer Gift
+function openAddFreeGiftModal() {
+  const container = document.getElementById('modal-container');
+  if (!container) return;
+
+  const physicalProducts = store.products.filter(p => !store.isBundleProduct(p.id) && p.is_active !== false);
+
+  container.innerHTML = `
+    <div class="modal-overlay">
+      <div class="modal-card" style="max-width:440px;">
+        <div class="modal-header">
+          <div class="modal-title" style="display:flex;align-items:center;gap:6px;color:var(--color-brown-dark);">
+            <span>🎁</span>
+            <span>Add Free Customer Gift</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
+        </div>
+        <div class="modal-body">
+          <div style="font-size:0.84rem;color:var(--text-muted);margin-bottom:14px;">
+            Choose an item to include in this sale as a free gift. The price charged to the customer will be <strong>RM 0.00</strong>, while inventory and cost will be accurately deducted.
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Select Gift Product</label>
+            <select id="free-gift-prod-select" class="form-select">
+              ${physicalProducts.map(p => `
+                <option value="${p.id}">
+                  ${p.name} (In Stock: ${p.stock} • Regular: RM ${Number(p.selling_price).toFixed(2)})
+                </option>
+              `).join('')}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Gift Quantity</label>
+            <input type="number" id="free-gift-qty-input" class="form-input number-input" min="1" value="1">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="modal-gift-abort-btn">Cancel</button>
+          <button type="button" class="btn btn-primary" id="modal-gift-submit-btn" style="background:var(--color-orange);border-color:var(--color-orange);">
+            🎁 Add Gift to Cart (RM0.00)
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+  document.getElementById('modal-gift-abort-btn').addEventListener('click', closeModal);
+
+  document.getElementById('modal-gift-submit-btn').addEventListener('click', () => {
+    const prodId = document.getElementById('free-gift-prod-select').value;
+    const qty = parseInt(document.getElementById('free-gift-qty-input').value, 10) || 1;
+
+    store.addFreeGiftToCart(prodId, qty);
+    showToast('🎁 Free gift added to cart!', 'success');
+    closeModal();
   });
 }
 
@@ -6703,62 +7127,217 @@ function openProductModal(prod = null) {
   });
 }
 
-// 6. Quick Update Cost Modal
+// 6. Cost Breakdown & Packaging Calculator Modal
 function openQuickCostModal(prod) {
   const container = document.getElementById('modal-container');
   if (!container) return;
 
-  container.innerHTML = `
-    <div class="modal-overlay">
-      <div class="modal-card" style="max-width:440px;">
-        <div class="modal-header">
-          <div class="modal-title">Update Unit Cost</div>
-          <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
-        </div>
-        <div class="modal-body">
-          <div style="font-weight:700;font-size:1.05rem;color:var(--color-black);margin-bottom:8px;">${prod.name}</div>
-          <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:14px;">
-            Current Unit Cost: <strong style="color:var(--color-black);">${formatRM(prod.cost)}</strong>
-          </div>
+  // Clone or initialize breakdown items
+  let breakdown = Array.isArray(prod.cost_breakdown) && prod.cost_breakdown.length > 0 
+    ? JSON.parse(JSON.stringify(prod.cost_breakdown)) 
+    : [
+        { name: 'Main Product / Coin', batch_cost: prod.cost || 10.00, batch_qty: 1, unit_cost: prod.cost || 10.00, notes: 'Base item' }
+      ];
 
-          <div class="form-group">
-            <label class="form-label">New Estimated Cost (RM)</label>
-            <input type="number" step="0.05" id="new-cost-input" class="form-input number-input" value="${prod.cost}">
-          </div>
+  function renderModalContent() {
+    let totalComputed = 0;
+    breakdown.forEach(item => {
+      const bCost = parseFloat(item.batch_cost) || 0;
+      const bQty = parseFloat(item.batch_qty) || 1;
+      const uCost = bQty > 0 ? (bCost / bQty) : 0;
+      item.unit_cost = Math.round(uCost * 100) / 100;
+      totalComputed += item.unit_cost;
+    });
+    totalComputed = Math.round(totalComputed * 100) / 100;
 
-          <div class="form-group">
-            <label class="form-label">Reason / Notes</label>
-            <input type="text" id="cost-notes-input" class="form-input" placeholder="e.g. Supplier acrylic printing price increase">
+    container.innerHTML = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width:640px;width:95%;">
+          <div class="modal-header">
+            <div class="modal-title" style="display:flex;align-items:center;gap:6px;">
+              <span>📋</span>
+              <span>Cost Breakdown &amp; Calculator — ${prod.name}</span>
+            </div>
+            <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
           </div>
+          <div class="modal-body" style="max-height:75vh;overflow-y:auto;">
+            <div style="font-size:0.84rem;color:var(--text-muted);margin-bottom:12px;line-height:1.4;">
+              List materials and bulk packaging (e.g. 20 bags for RM20 = RM1/ea, 200 stickers for RM20 = RM0.10/ea).
+              The system automatically calculates the exact unit cost for accurate gross profit!
+            </div>
 
-          <div style="background:#f3f4f6;border-radius:var(--radius-md);padding:10px 12px;font-size:0.78rem;color:var(--text-muted);">
-            • This new cost will only apply to <strong>future orders</strong>.<br>
-            • Historical completed order profits will <strong>never change</strong>.
+            <!-- Material & Packaging Items Table -->
+            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px;margin-bottom:14px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);">
+                  Material &amp; Packaging Components
+                </span>
+                <button type="button" class="btn btn-sm btn-secondary" id="btn-add-cost-item" style="font-size:0.75rem;padding:3px 8px;border-radius:14px;background:#fff;">
+                  ${renderIcon('plus', 12)}
+                  <span>Add Item</span>
+                </button>
+              </div>
+
+              <div id="cost-items-list" style="display:flex;flex-direction:column;gap:8px;">
+                ${breakdown.map((item, idx) => `
+                  <div class="cost-row" data-idx="${idx}" style="background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 10px;">
+                    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;align-items:center;">
+                      <div>
+                        <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Item Name</label>
+                        <input type="text" class="form-input cost-item-name" value="${item.name || ''}" placeholder="e.g. 钥匙圈 / 包装袋" style="padding:4px 6px;font-size:0.82rem;height:28px;">
+                      </div>
+                      <div>
+                        <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Batch RM</label>
+                        <input type="number" step="0.10" class="form-input cost-item-cost" value="${item.batch_cost ?? 10}" placeholder="20.00" style="padding:4px 6px;font-size:0.82rem;height:28px;">
+                      </div>
+                      <div>
+                        <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Batch Qty</label>
+                        <input type="number" step="1" min="1" class="form-input cost-item-qty" value="${item.batch_qty ?? 1}" placeholder="20" style="padding:4px 6px;font-size:0.82rem;height:28px;">
+                      </div>
+                      <div style="text-align:right;">
+                        <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Unit Cost</label>
+                        <span class="num cost-item-unit" style="font-weight:700;font-size:0.85rem;color:var(--color-brown);line-height:28px;">
+                          RM ${item.unit_cost.toFixed(2)}
+                        </span>
+                      </div>
+                      <div>
+                        <label style="font-size:0.68rem;visibility:hidden;display:block;">Del</label>
+                        <button type="button" class="btn btn-sm btn-secondary btn-del-cost-item" data-idx="${idx}" style="padding:4px 6px;color:var(--color-danger);height:28px;" ${breakdown.length <= 1 ? 'disabled' : ''}>
+                          ${renderIcon('trash', 14)}
+                        </button>
+                      </div>
+                    </div>
+                    <div style="margin-top:4px;">
+                      <input type="text" class="form-input cost-item-notes" value="${item.notes || ''}" placeholder="Notes (e.g. 淘宝20个一包批发 / 200张一卷)" style="padding:2px 6px;font-size:0.75rem;height:24px;border-style:dashed;">
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+
+              <!-- Computed Sum Banner -->
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:8px;border-top:1px dashed var(--border-light);">
+                <div>
+                  <span style="font-size:0.78rem;color:var(--text-muted);font-weight:600;">Total Itemized Cost:</span>
+                  <span class="num" style="font-size:1.15rem;font-weight:800;color:var(--color-brown);margin-left:6px;">
+                    RM ${totalComputed.toFixed(2)} / unit
+                  </span>
+                </div>
+                <button type="button" class="btn btn-sm btn-primary" id="btn-apply-computed-cost" style="font-size:0.75rem;padding:4px 10px;">
+                  ⚡ Use Computed Cost
+                </button>
+              </div>
+            </div>
+
+            <!-- Unit Cost Input -->
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label" style="font-weight:700;">Final Unit Cost (RM)</label>
+                <input type="number" step="0.05" id="new-cost-input" class="form-input number-input" value="${prod.cost || totalComputed}" style="font-size:1.05rem;font-weight:700;color:var(--color-brown-dark);">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cost Update Reason</label>
+                <input type="text" id="cost-reason-input" class="form-input" placeholder="e.g. Added packaging and sticker breakdown">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">General Cost Notes (备注)</label>
+              <textarea id="cost-notes-textarea" class="form-textarea" rows="2" placeholder="e.g. Mukichip成本包含钥匙圈RM10 + 包装(20个)RM20 + 包装贴纸(200个)RM20">${prod.cost_notes || ''}</textarea>
+            </div>
           </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" id="modal-cost-abort-btn">Cancel</button>
-          <button type="button" class="btn btn-primary" id="modal-cost-save-btn">Update Cost</button>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="modal-cost-abort-btn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="modal-cost-save-btn">
+              Save Cost &amp; Breakdown
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  `;
+    `;
 
-  document.getElementById('modal-close-btn').addEventListener('click', closeModal);
-  document.getElementById('modal-cost-abort-btn').addEventListener('click', closeModal);
+    document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+    document.getElementById('modal-cost-abort-btn').addEventListener('click', closeModal);
 
-  document.getElementById('modal-cost-save-btn').addEventListener('click', async () => {
-    const newCost = document.getElementById('new-cost-input').value;
-    const notes = document.getElementById('cost-notes-input').value;
+    // Add cost item row
+    document.getElementById('btn-add-cost-item').addEventListener('click', () => {
+      saveInputsToBreakdown();
+      breakdown.push({ name: '', batch_cost: 0, batch_qty: 1, unit_cost: 0, notes: '' });
+      renderModalContent();
+    });
 
-    try {
-      await updateProductCost(prod.id, newCost, notes);
-      showToast('Unit cost updated and logged.', 'success');
-      closeModal();
-    } catch (err) {
-      alert(`Could not update cost: ${err.message}`);
+    // Delete cost item row
+    container.querySelectorAll('.btn-del-cost-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        saveInputsToBreakdown();
+        const idx = parseInt(btn.getAttribute('data-idx'), 10);
+        breakdown.splice(idx, 1);
+        if (breakdown.length === 0) {
+          breakdown.push({ name: 'Direct Item', batch_cost: 0, batch_qty: 1, unit_cost: 0, notes: '' });
+        }
+        renderModalContent();
+      });
+    });
+
+    // Recalculate on input
+    container.querySelectorAll('.cost-item-cost, .cost-item-qty').forEach(input => {
+      input.addEventListener('input', () => {
+        saveInputsToBreakdown();
+        let sum = 0;
+        breakdown.forEach(item => sum += item.unit_cost);
+        sum = Math.round(sum * 100) / 100;
+        container.querySelector('.cost-item-unit').textContent = `RM ${sum.toFixed(2)}`;
+      });
+    });
+
+    // Apply computed cost button
+    const applyBtn = document.getElementById('btn-apply-computed-cost');
+    if (applyBtn) {
+      applyBtn.addEventListener('click', () => {
+        saveInputsToBreakdown();
+        let sum = 0;
+        breakdown.forEach(item => sum += item.unit_cost);
+        document.getElementById('new-cost-input').value = sum.toFixed(2);
+      });
     }
-  });
+
+    // Save final cost
+    document.getElementById('modal-cost-save-btn').addEventListener('click', async () => {
+      saveInputsToBreakdown();
+      const newCost = parseFloat(document.getElementById('new-cost-input').value) || 0;
+      const reason = document.getElementById('cost-reason-input').value.trim();
+      const costNotes = document.getElementById('cost-notes-textarea').value.trim();
+
+      try {
+        const product = await db.getById('products', prod.id);
+        if (product) {
+          product.cost_breakdown = breakdown;
+          product.cost_notes = costNotes;
+          await db.putItem('products', product);
+        }
+        await updateProductCost(prod.id, newCost, reason || 'Material & packaging cost breakdown update');
+        showToast('Cost breakdown and unit cost saved!', 'success');
+        closeModal();
+      } catch (err) {
+        alert(`Could not save cost: ${err.message}`);
+      }
+    });
+  }
+
+  function saveInputsToBreakdown() {
+    container.querySelectorAll('.cost-row').forEach(row => {
+      const idx = parseInt(row.getAttribute('data-idx'), 10);
+      if (breakdown[idx]) {
+        breakdown[idx].name = row.querySelector('.cost-item-name')?.value || '';
+        breakdown[idx].batch_cost = parseFloat(row.querySelector('.cost-item-cost')?.value) || 0;
+        breakdown[idx].batch_qty = parseFloat(row.querySelector('.cost-item-qty')?.value) || 1;
+        breakdown[idx].notes = row.querySelector('.cost-item-notes')?.value || '';
+        const uCost = breakdown[idx].batch_qty > 0 ? (breakdown[idx].batch_cost / breakdown[idx].batch_qty) : 0;
+        breakdown[idx].unit_cost = Math.round(uCost * 100) / 100;
+      }
+    });
+  }
+
+  renderModalContent();
 }
 
 // 7. Add Expense Modal
@@ -6926,7 +7505,7 @@ function openManageExpenseCategoriesModal() {
   });
 }
 
-// 8. Create / Edit Promotion Modal
+// 8. Create / Edit Promotion Modal (With Spend Thresholds & Free Gifts)
 function openPromotionModal(promo = null) {
   const container = document.getElementById('modal-container');
   if (!container) return;
@@ -6936,7 +7515,7 @@ function openPromotionModal(promo = null) {
 
   container.innerHTML = `
     <div class="modal-overlay">
-      <div class="modal-card" style="max-width:520px;">
+      <div class="modal-card" style="max-width:540px;">
         <div class="modal-header">
           <div class="modal-title">${isEdit ? 'Edit Promotion' : 'Create Promotion'}</div>
           <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
@@ -6944,21 +7523,65 @@ function openPromotionModal(promo = null) {
         <div class="modal-body">
           <div class="form-group">
             <label class="form-label">Promotion Name</label>
-            <input type="text" id="promo-name-input" class="form-input" value="${promo?.name || ''}" placeholder="e.g. Muki Bundle Deal (V1 + V2 + Keychain)">
+            <input type="text" id="promo-name-input" class="form-input" value="${promo?.name || ''}" placeholder="e.g. Spend RM200 Get Free Acrylic Keychain / Muki Bundle">
           </div>
 
           <div class="grid-2">
             <div class="form-group">
               <label class="form-label">Promotion Type</label>
               <select id="promo-type-select" class="form-select">
-                <option value="bundle_price" ${promo?.type === 'bundle_price' ? 'selected' : ''}>Fixed Bundle Price (RM)</option>
-                <option value="fixed_discount" ${promo?.type === 'fixed_discount' ? 'selected' : ''}>Fixed Discount (-RM)</option>
-                <option value="percent_discount" ${promo?.type === 'percent_discount' ? 'selected' : ''}>Percentage Discount (-%)</option>
+                <option value="bundle_price" ${promo?.type === 'bundle_price' ? 'selected' : ''}>Fixed Bundle Price (组合特价 RM)</option>
+                <option value="spend_threshold_gift" ${promo?.type === 'spend_threshold_gift' ? 'selected' : ''}>Spend Min RM X Get Free Gift (满额送赠品)</option>
+                <option value="spend_threshold_discount" ${promo?.type === 'spend_threshold_discount' ? 'selected' : ''}>Spend Min RM X Get Discount (满额立减/折)</option>
+                <option value="fixed_discount" ${promo?.type === 'fixed_discount' ? 'selected' : ''}>Order Fixed Discount (全单立减 -RM)</option>
+                <option value="percent_discount" ${promo?.type === 'percent_discount' ? 'selected' : ''}>Order Percentage Discount (全单折扣 -%)</option>
               </select>
             </div>
-            <div class="form-group">
-              <label class="form-label" id="promo-val-label">Special Price / Value</label>
-              <input type="number" step="0.50" id="promo-val-input" class="form-input number-input" value="${promo ? (promo.price || promo.value) : 40.00}">
+            
+            <!-- Value / Price Input -->
+            <div class="form-group" id="promo-val-group">
+              <label class="form-label" id="promo-val-label">Price / Discount Value</label>
+              <input type="number" step="0.50" id="promo-val-input" class="form-input number-input" value="${promo ? (promo.price || promo.value || 0) : 40.00}">
+            </div>
+          </div>
+
+          <!-- Spend Threshold Fields -->
+          <div id="promo-threshold-group" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;margin-bottom:12px;">
+            <div class="grid-2">
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Minimum Order Spend (RM)</label>
+                <input type="number" step="5" id="promo-min-spend-input" class="form-input number-input" value="${promo?.min_spend || 200}" placeholder="200.00">
+              </div>
+              <div class="form-group" id="promo-discount-type-group" style="margin-bottom:0;display:none;">
+                <label class="form-label">Reward Discount Type</label>
+                <select id="promo-discount-type-select" class="form-select">
+                  <option value="fixed" ${promo?.discount_type !== 'percent' ? 'selected' : ''}>Less Fixed Amount (-RM)</option>
+                  <option value="percent" ${promo?.discount_type === 'percent' ? 'selected' : ''}>Percentage Off (-%)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Free Gift Selection Fields -->
+          <div id="promo-gift-group" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:var(--radius-md);padding:12px;margin-bottom:12px;">
+            <div style="font-size:0.78rem;font-weight:700;color:#92400e;margin-bottom:8px;text-transform:uppercase;">
+              🎁 Free Gift Reward Configuration
+            </div>
+            <div class="grid-2">
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Choose Free Gift Product</label>
+                <select id="promo-gift-prod-select" class="form-select">
+                  ${regularProducts.map(p => `
+                    <option value="${p.id}" ${promo?.gift_product_id === p.id ? 'selected' : ''}>
+                      ${p.name} (Stock: ${p.stock})
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Gift Quantity</label>
+                <input type="number" step="1" min="1" id="promo-gift-qty-input" class="form-input number-input" value="${promo?.gift_quantity || 1}">
+              </div>
             </div>
           </div>
 
@@ -6975,7 +7598,7 @@ function openPromotionModal(promo = null) {
 
           <div class="form-group">
             <label class="form-label">Description</label>
-            <input type="text" id="promo-desc-input" class="form-input" value="${promo?.description || ''}" placeholder="Short summary for customer display">
+            <input type="text" id="promo-desc-input" class="form-input" value="${promo?.description || ''}" placeholder="e.g. Spend RM200 and receive a free Muki Acrylic Keychain!">
           </div>
         </div>
         <div class="modal-footer">
@@ -6991,6 +7614,50 @@ function openPromotionModal(promo = null) {
   document.getElementById('modal-close-btn').addEventListener('click', closeModal);
   document.getElementById('modal-promo-abort-btn').addEventListener('click', closeModal);
 
+  const typeSelect = document.getElementById('promo-type-select');
+  const valGroup = document.getElementById('promo-val-group');
+  const valLabel = document.getElementById('promo-val-label');
+  const thresholdGroup = document.getElementById('promo-threshold-group');
+  const discountTypeGroup = document.getElementById('promo-discount-type-group');
+  const giftGroup = document.getElementById('promo-gift-group');
+
+  function updatePromoFields() {
+    const t = typeSelect.value;
+    if (t === 'bundle_price') {
+      valGroup.style.display = 'block';
+      valLabel.textContent = 'Special Bundle Price (RM)';
+      thresholdGroup.style.display = 'none';
+      discountTypeGroup.style.display = 'none';
+      giftGroup.style.display = 'none';
+    } else if (t === 'spend_threshold_gift') {
+      valGroup.style.display = 'none';
+      thresholdGroup.style.display = 'block';
+      discountTypeGroup.style.display = 'none';
+      giftGroup.style.display = 'block';
+    } else if (t === 'spend_threshold_discount') {
+      valGroup.style.display = 'block';
+      valLabel.textContent = 'Discount Amount (RM or %)';
+      thresholdGroup.style.display = 'block';
+      discountTypeGroup.style.display = 'block';
+      giftGroup.style.display = 'none';
+    } else if (t === 'fixed_discount') {
+      valGroup.style.display = 'block';
+      valLabel.textContent = 'Fixed Discount (-RM)';
+      thresholdGroup.style.display = 'none';
+      discountTypeGroup.style.display = 'none';
+      giftGroup.style.display = 'none';
+    } else if (t === 'percent_discount') {
+      valGroup.style.display = 'block';
+      valLabel.textContent = 'Percentage Off (-%)';
+      thresholdGroup.style.display = 'none';
+      discountTypeGroup.style.display = 'none';
+      giftGroup.style.display = 'none';
+    }
+  }
+
+  typeSelect.addEventListener('change', updatePromoFields);
+  updatePromoFields();
+
   document.getElementById('modal-promo-save-btn').addEventListener('click', async () => {
     const name = document.getElementById('promo-name-input').value.trim();
     if (!name) {
@@ -6998,8 +7665,12 @@ function openPromotionModal(promo = null) {
       return;
     }
 
-    const type = document.getElementById('promo-type-select').value;
-    const val = round(parseFloat(document.getElementById('promo-val-input').value) || 0);
+    const type = typeSelect.value;
+    const val = round(parseFloat(document.getElementById('promo-val-input')?.value) || 0);
+    const minSpend = parseFloat(document.getElementById('promo-min-spend-input')?.value) || 0;
+    const discountType = document.getElementById('promo-discount-type-select')?.value || 'fixed';
+    const giftProdId = document.getElementById('promo-gift-prod-select')?.value || '';
+    const giftQty = parseInt(document.getElementById('promo-gift-qty-input')?.value, 10) || 1;
     const startDate = document.getElementById('promo-start-input').value;
     const endDate = document.getElementById('promo-end-input').value;
     const desc = document.getElementById('promo-desc-input').value.trim();
@@ -7010,7 +7681,11 @@ function openPromotionModal(promo = null) {
       description: desc,
       type,
       price: type === 'bundle_price' ? val : 0,
-      value: type !== 'bundle_price' ? val : 0,
+      value: (type !== 'bundle_price' && type !== 'spend_threshold_gift') ? val : 0,
+      min_spend: minSpend,
+      discount_type: discountType,
+      gift_product_id: giftProdId,
+      gift_quantity: giftQty,
       start_date: startDate,
       end_date: endDate,
       is_active: promo ? promo.is_active : true,
