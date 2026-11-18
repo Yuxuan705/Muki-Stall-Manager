@@ -2256,16 +2256,42 @@ class AppStore {
       const id = reorderedProductIds[i];
       const prod = this.products.find(p => p.id === id);
       if (prod) {
+        prod.custom_order = i + 1;
         prod.sort_order = i + 1;
         await db.putItem('products', prod);
       }
     }
 
+    // Persist user-defined custom sequence
+    await db.putItem('settings', { key: 'custom_product_order', value: reorderedProductIds });
     this.products.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
     await this.refreshAll();
   }
 
   async sortProductsBy(criteria) {
+    // Restore saved custom user-defined sequence
+    if (criteria === 'custom' || criteria === 'default') {
+      const setting = await db.getById('settings', 'custom_product_order');
+      const orderIds = setting?.value;
+      if (Array.isArray(orderIds) && orderIds.length > 0) {
+        for (let i = 0; i < orderIds.length; i++) {
+          const prod = this.products.find(p => p.id === orderIds[i]);
+          if (prod) {
+            prod.sort_order = i + 1;
+            await db.putItem('products', prod);
+          }
+        }
+      } else {
+        const sorted = [...this.products].sort((a, b) => (a.custom_order || a.sort_order || 0) - (b.custom_order || b.sort_order || 0));
+        for (let i = 0; i < sorted.length; i++) {
+          sorted[i].sort_order = i + 1;
+          await db.putItem('products', sorted[i]);
+        }
+      }
+      await this.refreshAll();
+      return;
+    }
+
     let sorted = [...this.products];
     if (criteria === 'name_asc') {
       sorted.sort((a, b) => a.name.localeCompare(b.name));
@@ -2276,8 +2302,12 @@ class AppStore {
     } else if (criteria === 'price_asc') {
       sorted.sort((a, b) => (Number(a.selling_price) || 0) - (Number(b.selling_price) || 0));
     } else if (criteria === 'stock_asc') {
-      sorted.sort((a, b) => this.getAvailableStock(a.id) - this.getAvailableStock(b.id));
+      sorted.sort((a, b) => this.getPhysicalStock(a.id) - this.getPhysicalStock(b.id));
     } else if (criteria === 'stock_desc') {
+      sorted.sort((a, b) => this.getPhysicalStock(b.id) - this.getPhysicalStock(a.id));
+    } else if (criteria === 'available_asc') {
+      sorted.sort((a, b) => this.getAvailableStock(a.id) - this.getAvailableStock(b.id));
+    } else if (criteria === 'available_desc') {
       sorted.sort((a, b) => this.getAvailableStock(b.id) - this.getAvailableStock(a.id));
     } else if (criteria === 'cost_desc') {
       sorted.sort((a, b) => (Number(b.cost) || 0) - (Number(a.cost) || 0));
@@ -5763,6 +5793,15 @@ function renderPaymentsTab(breakdown, total) {
 
 let activeInventoryTab = 'stock'; // 'stock' or 'movements'
 let movementFilterProduct = 'all';
+let currentInventorySort = 'custom';
+
+function setInventorySort(val) {
+  currentInventorySort = val;
+}
+
+function getInventorySort() {
+  return currentInventorySort;
+}
 
 function setInventoryTab(tab) {
   activeInventoryTab = tab;
@@ -5829,8 +5868,25 @@ function renderInventory() {
 function renderStockTab(products) {
   return `
     <div class="card" style="margin-bottom:24px;">
-      <div style="margin-bottom:12px;font-size:0.85rem;color:var(--text-muted);">
-        Total: <strong>${products.length}</strong> items. Click headers (<strong>Order</strong>, <strong>Name</strong>, <strong>Stock</strong>, <strong>Cost</strong>) to sort, or <strong>drag ⠿</strong> to adjust sequence.
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+        <div style="font-size:0.85rem;color:var(--text-muted);">
+          Total: <strong>${products.length}</strong> items. Click headers (<strong>Order</strong>, <strong>Name</strong>, <strong>Stock</strong>, <strong>Cost</strong>) to sort, or <strong>drag ⠿</strong> to adjust sequence.
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <label style="font-size:0.78rem;font-weight:600;color:var(--text-muted);">Sort by:</label>
+          <select id="inventory-sort-select" class="form-select" style="font-size:0.82rem;padding:4px 8px;width:auto;">
+            <option value="custom" ${currentInventorySort === 'custom' ? 'selected' : ''}>Default (Custom Order)</option>
+            <option value="name_asc" ${currentInventorySort === 'name_asc' ? 'selected' : ''}>Name (A → Z)</option>
+            <option value="name_desc" ${currentInventorySort === 'name_desc' ? 'selected' : ''}>Name (Z → A)</option>
+            <option value="category" ${currentInventorySort === 'category' ? 'selected' : ''}>Category</option>
+            <option value="stock_desc" ${currentInventorySort === 'stock_desc' ? 'selected' : ''}>Physical Stock (High to Low)</option>
+            <option value="stock_asc" ${currentInventorySort === 'stock_asc' ? 'selected' : ''}>Physical Stock (Low to High)</option>
+            <option value="available_desc" ${currentInventorySort === 'available_desc' ? 'selected' : ''}>Assemble Capacity (High to Low)</option>
+            <option value="available_asc" ${currentInventorySort === 'available_asc' ? 'selected' : ''}>Assemble Capacity (Low to High)</option>
+            <option value="cost_desc" ${currentInventorySort === 'cost_desc' ? 'selected' : ''}>Unit Cost (High to Low)</option>
+            <option value="cost_asc" ${currentInventorySort === 'cost_asc' ? 'selected' : ''}>Unit Cost (Low to High)</option>
+          </select>
+        </div>
       </div>
       <div class="table-container">
         <table class="table table--mobile-cards">
@@ -6312,7 +6368,7 @@ function renderProductList(products) {
         <div style="display:flex;align-items:center;gap:6px;">
           <label style="font-size:0.78rem;font-weight:600;color:var(--text-muted);">Sort by:</label>
           <select id="products-sort-select" class="form-select" style="font-size:0.82rem;padding:4px 8px;width:auto;">
-            <option value="custom">Custom Order (Saved)</option>
+            <option value="custom">Default (Custom Order)</option>
             <option value="name_asc">Name (A → Z)</option>
             <option value="category">Category</option>
             <option value="price_desc">Price (High to Low)</option>
@@ -7311,29 +7367,59 @@ function attachEventListeners() {
     });
   });
 
+  // Inventory sorting dropdown
+  const invSortSelect = document.getElementById('inventory-sort-select');
+  if (invSortSelect) {
+    invSortSelect.addEventListener('change', async (e) => {
+      const val = e.target.value;
+      setInventorySort(val);
+      await store.sortProductsBy(val);
+      if (val === 'custom') {
+        showToast('Restored Default Custom Order', 'success');
+      }
+      renderApp();
+    });
+  }
+
   // Sort inventory table headers (Order, Name, Category, Stock, Capacity, Cost)
   appRoot.querySelectorAll('[data-action="sort-inventory-col"]').forEach(th => {
     th.addEventListener('click', async () => {
       const col = th.getAttribute('data-col');
       if (col === 'order') {
+        setInventorySort('custom');
         await store.sortProductsBy('custom');
+        showToast('Restored Default Custom Order', 'success');
       } else if (col === 'name') {
         const dir = sortState.col === 'name' && sortState.dir === 'asc' ? 'desc' : 'asc';
         sortState = { col: 'name', dir };
         window._prodSortState = sortState;
-        await store.sortProductsBy(dir === 'asc' ? 'name_asc' : 'name_desc');
+        const sVal = dir === 'asc' ? 'name_asc' : 'name_desc';
+        setInventorySort(sVal);
+        await store.sortProductsBy(sVal);
       } else if (col === 'category') {
+        setInventorySort('category');
         await store.sortProductsBy('category');
-      } else if (col === 'stock' || col === 'available') {
+      } else if (col === 'stock') {
         const dir = sortState.col === 'stock' && sortState.dir === 'desc' ? 'asc' : 'desc';
         sortState = { col: 'stock', dir };
         window._prodSortState = sortState;
-        await store.sortProductsBy(dir === 'desc' ? 'stock_desc' : 'stock_asc');
+        const sVal = dir === 'desc' ? 'stock_desc' : 'stock_asc';
+        setInventorySort(sVal);
+        await store.sortProductsBy(sVal);
+      } else if (col === 'available') {
+        const dir = sortState.col === 'available' && sortState.dir === 'desc' ? 'asc' : 'desc';
+        sortState = { col: 'available', dir };
+        window._prodSortState = sortState;
+        const sVal = dir === 'desc' ? 'available_desc' : 'available_asc';
+        setInventorySort(sVal);
+        await store.sortProductsBy(sVal);
       } else if (col === 'cost') {
         const dir = sortState.col === 'cost' && sortState.dir === 'desc' ? 'asc' : 'desc';
         sortState = { col: 'cost', dir };
         window._prodSortState = sortState;
-        await store.sortProductsBy(dir === 'desc' ? 'cost_desc' : 'cost_asc');
+        const sVal = dir === 'desc' ? 'cost_desc' : 'cost_asc';
+        setInventorySort(sVal);
+        await store.sortProductsBy(sVal);
       }
       renderApp();
     });
@@ -8497,12 +8583,12 @@ function openQuickCostModal(prod) {
                           <input type="text" class="form-input cost-item-name" value="${item.name || ''}" placeholder="e.g. Coin body / Packaging bag / Sticker" style="padding:4px 6px;font-size:0.85rem;height:28px;">
                         </div>
                         <div>
-                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Total Cost (RM)</label>
-                          <input type="number" step="0.10" class="form-input cost-item-cost" value="${item.batch_cost ?? 0}" placeholder="e.g. 1500" style="padding:4px 6px;font-size:0.85rem;height:28px;">
-                        </div>
-                        <div>
                           <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Total Qty (pcs)</label>
                           <input type="number" step="1" min="1" class="form-input cost-item-qty" value="${item.batch_qty ?? 1000}" placeholder="e.g. 1000" style="padding:4px 6px;font-size:0.85rem;height:28px;">
+                        </div>
+                        <div>
+                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Total Cost (RM)</label>
+                          <input type="number" step="0.10" class="form-input cost-item-cost" value="${item.batch_cost ?? 0}" placeholder="e.g. 1500" style="padding:4px 6px;font-size:0.85rem;height:28px;">
                         </div>
                         <div style="text-align:right;">
                           <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Unit Cost</label>
@@ -8518,16 +8604,9 @@ function openQuickCostModal(prod) {
                         </div>
                       </div>
 
-                      <!-- Quick batch quantity presets & notes -->
-                      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-light);gap:8px;flex-wrap:wrap;">
-                        <div style="display:flex;gap:4px;align-items:center;">
-                          <span style="font-size:0.68rem;color:var(--text-muted);">Quick Qty:</span>
-                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="100" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">100 pcs</button>
-                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="200" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">200 pcs</button>
-                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="500" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">500 pcs</button>
-                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="1000" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">1000 pcs</button>
-                        </div>
-                        <input type="text" class="form-input cost-item-notes" value="${item.notes || ''}" placeholder="Batch notes (e.g. Factory order batch #1)" style="padding:2px 8px;font-size:0.75rem;height:24px;border-style:dashed;max-width:280px;flex:1;">
+                      <!-- Optional component notes -->
+                      <div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light);">
+                        <input type="text" class="form-input cost-item-notes" value="${item.notes || ''}" placeholder="Optional component notes (e.g. Supplier, batch reference)" style="padding:3px 8px;font-size:0.75rem;height:26px;border-style:dashed;width:100%;">
                       </div>
                     </div>
                   `;
@@ -8568,7 +8647,7 @@ function openQuickCostModal(prod) {
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" id="modal-cost-abort-btn">Cancel</button>
             <button type="button" class="btn btn-primary" id="modal-cost-save-btn">
-              Save Cost Breakdown
+              Save &amp; Update Unit Cost
             </button>
           </div>
         </div>
@@ -8623,20 +8702,7 @@ function openQuickCostModal(prod) {
       });
     });
 
-    // Preset quantity buttons (100, 200, 500, 1000)
-    container.querySelectorAll('.btn-preset-qty').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const row = btn.closest('.cost-row');
-        if (row) {
-          const qtyInput = row.querySelector('.cost-item-qty');
-          if (qtyInput) {
-            qtyInput.value = btn.getAttribute('data-qty');
-            const total = recalculateAll();
-            document.getElementById('new-cost-input').value = total.toFixed(2);
-          }
-        }
-      });
-    });
+
 
     // Real-time live recalculate on any cost or quantity keystroke
     container.querySelectorAll('.cost-item-cost, .cost-item-qty').forEach(input => {
@@ -9558,7 +9624,8 @@ function setupDraggableRows() {
       currentIds.splice(toIdx, 0, draggedId);
 
       await store.reorderProducts(currentIds);
-      showToast('Product order updated', 'success');
+      if (typeof setInventorySort === 'function') setInventorySort('custom');
+      showToast('Custom order saved', 'success');
       renderApp();
     });
 
