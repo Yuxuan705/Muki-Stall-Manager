@@ -7246,8 +7246,37 @@ function openProductModal(prod = null) {
               <input type="number" step="0.05" id="prod-price-input" class="form-input number-input" value="${prod ? prod.selling_price : 0}">
             </div>
             <div class="form-group">
-              <label class="form-label">Estimated Cost (RM)</label>
-              <input type="number" step="0.05" id="prod-cost-input" class="form-input number-input" value="${prod ? prod.cost : 0}">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <label class="form-label" style="margin-bottom:0;">Estimated Cost (RM)</label>
+                <button type="button" id="btn-toggle-bulk-calc" style="background:none;border:none;color:var(--color-brown);font-size:0.75rem;cursor:pointer;font-weight:700;padding:0;">
+                  🧮 批量进货换算 (100/1000个)
+                </button>
+              </div>
+              <input type="number" step="0.01" id="prod-cost-input" class="form-input number-input" value="${prod ? prod.cost : 0}">
+              <!-- Bulk Purchase Calculator Helper -->
+              <div id="bulk-calc-panel" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 10px;margin-top:6px;">
+                <div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:6px;">
+                  以 100/1000 个批量进货？输入总费用与总数，自动算单价：
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                  <div>
+                    <label style="font-size:0.68rem;color:var(--text-muted);display:block;">进货总额 (RM)</label>
+                    <input type="number" step="0.10" id="quick-batch-cost" class="form-input" placeholder="e.g. 1500" style="padding:3px 6px;font-size:0.82rem;height:26px;">
+                  </div>
+                  <div>
+                    <label style="font-size:0.68rem;color:var(--text-muted);display:block;">进货总数 (个)</label>
+                    <input type="number" step="1" id="quick-batch-qty" class="form-input" placeholder="e.g. 1000" style="padding:3px 6px;font-size:0.82rem;height:26px;">
+                  </div>
+                </div>
+                <div style="margin-top:6px;display:flex;justify-content:space-between;align-items:center;">
+                  <span style="font-size:0.8rem;font-weight:700;color:var(--color-brown);">
+                    折合: <strong id="quick-batch-result">RM 0.00</strong>/个
+                  </span>
+                  <button type="button" class="btn btn-sm btn-primary" id="btn-apply-batch-calc" style="font-size:0.7rem;padding:2px 8px;">
+                    填入单价
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -7285,6 +7314,41 @@ function openProductModal(prod = null) {
     const stockGrp = document.getElementById('prod-stock-group');
     if (stockGrp) stockGrp.style.display = e.target.value === 'true' ? 'none' : 'block';
   });
+
+  // Bulk Purchase Calculator helper in Product Modal
+  const btnToggleBulk = document.getElementById('btn-toggle-bulk-calc');
+  const bulkPanel = document.getElementById('bulk-calc-panel');
+  const quickBatchCost = document.getElementById('quick-batch-cost');
+  const quickBatchQty = document.getElementById('quick-batch-qty');
+  const quickBatchResult = document.getElementById('quick-batch-result');
+  const btnApplyBatch = document.getElementById('btn-apply-batch-calc');
+
+  if (btnToggleBulk && bulkPanel) {
+    btnToggleBulk.addEventListener('click', () => {
+      bulkPanel.style.display = bulkPanel.style.display === 'none' ? 'block' : 'none';
+    });
+
+    function updateQuickBatch() {
+      const c = parseFloat(quickBatchCost.value) || 0;
+      const q = parseFloat(quickBatchQty.value) || 0;
+      const unit = q > 0 ? (c / q) : 0;
+      quickBatchResult.textContent = `RM ${unit < 0.1 && (unit * 100) % 1 !== 0 ? unit.toFixed(3) : unit.toFixed(2)}`;
+    }
+
+    quickBatchCost?.addEventListener('input', updateQuickBatch);
+    quickBatchQty?.addEventListener('input', updateQuickBatch);
+
+    btnApplyBatch?.addEventListener('click', () => {
+      const c = parseFloat(quickBatchCost.value) || 0;
+      const q = parseFloat(quickBatchQty.value) || 0;
+      if (q > 0) {
+        const unit = Math.round((c / q) * 1000) / 1000;
+        document.getElementById('prod-cost-input').value = unit.toFixed(2);
+        bulkPanel.style.display = 'none';
+        showToast(`Unit cost RM ${unit.toFixed(2)} applied!`, 'success');
+      }
+    });
+  }
 
   document.getElementById('modal-prod-save-btn').addEventListener('click', async () => {
     const name = document.getElementById('prod-name-input').value.trim();
@@ -7329,7 +7393,7 @@ function openProductModal(prod = null) {
   });
 }
 
-// 6. Cost Breakdown & Packaging Calculator Modal
+// 6. Cost Breakdown & Packaging Calculator Modal (材料与批量进货成本核算)
 function openQuickCostModal(prod) {
   const container = document.getElementById('modal-container');
   if (!container) return;
@@ -7338,94 +7402,101 @@ function openQuickCostModal(prod) {
   let breakdown = Array.isArray(prod.cost_breakdown) && prod.cost_breakdown.length > 0 
     ? JSON.parse(JSON.stringify(prod.cost_breakdown)) 
     : [
-        { name: 'Main Product / Coin', batch_cost: prod.cost || 10.00, batch_qty: 1, unit_cost: prod.cost || 10.00, notes: 'Base item' }
+        { name: '主体商品/金属币', batch_cost: (prod.cost ? prod.cost * 1000 : 1500), batch_qty: 1000, unit_cost: prod.cost || 1.50, notes: '厂家批量订做' },
+        { name: '包装袋 (OPP/珠光袋)', batch_cost: 25, batch_qty: 500, unit_cost: 0.05, notes: '500个一包批发' },
+        { name: '封口贴纸/背卡', batch_cost: 20, batch_qty: 1000, unit_cost: 0.02, notes: '1000张一卷' }
       ];
 
   function renderModalContent() {
-    let totalComputed = 0;
-    breakdown.forEach(item => {
-      const bCost = parseFloat(item.batch_cost) || 0;
-      const bQty = parseFloat(item.batch_qty) || 1;
-      const uCost = bQty > 0 ? (bCost / bQty) : 0;
-      item.unit_cost = Math.round(uCost * 100) / 100;
-      totalComputed += item.unit_cost;
-    });
-    totalComputed = Math.round(totalComputed * 100) / 100;
-
     container.innerHTML = `
       <div class="modal-overlay">
-        <div class="modal-card" style="max-width:640px;width:95%;">
+        <div class="modal-card" style="max-width:680px;width:95%;">
           <div class="modal-header">
             <div class="modal-title" style="display:flex;align-items:center;gap:6px;">
               <span>📋</span>
-              <span>Cost Breakdown &amp; Calculator — ${prod.name}</span>
+              <span>材料与批量进货成本核算 — ${prod.name}</span>
             </div>
             <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
           </div>
           <div class="modal-body" style="max-height:75vh;overflow-y:auto;">
-            <div style="font-size:0.84rem;color:var(--text-muted);margin-bottom:12px;line-height:1.4;">
-              List materials and bulk packaging (e.g. 20 bags for RM20 = RM1/ea, 200 stickers for RM20 = RM0.10/ea).
-              The system automatically calculates the exact unit cost for accurate gross profit!
+            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:14px;font-size:0.82rem;color:var(--color-brown-dark);line-height:1.45;">
+              💡 <strong>专为 100 / 1000 个批量采购设计</strong>：直接输入每种材料的<strong>进货总金额</strong>和<strong>采购总数</strong>，系统会自动为您精确折算出单件成本！
             </div>
 
-            <!-- Material & Packaging Items Table -->
-            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px;margin-bottom:14px;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);">
-                  Material &amp; Packaging Components
+            <!-- Material & Packaging Items Container -->
+            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;margin-bottom:14px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--color-brown);">
+                  材料及包装批次明细 (Material &amp; Packaging Components)
                 </span>
-                <button type="button" class="btn btn-sm btn-secondary" id="btn-add-cost-item" style="font-size:0.75rem;padding:3px 8px;border-radius:14px;background:#fff;">
+                <button type="button" class="btn btn-sm btn-secondary" id="btn-add-cost-item" style="font-size:0.75rem;padding:3px 10px;background:#ffffff;">
                   ${renderIcon('plus', 12)}
-                  <span>Add Item</span>
+                  <span>+ 添加材料/配件</span>
                 </button>
               </div>
 
-              <div id="cost-items-list" style="display:flex;flex-direction:column;gap:8px;">
-                ${breakdown.map((item, idx) => `
-                  <div class="cost-row" data-idx="${idx}" style="background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 10px;">
-                    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;align-items:center;">
-                      <div>
-                        <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Item Name</label>
-                        <input type="text" class="form-input cost-item-name" value="${item.name || ''}" placeholder="e.g. 钥匙圈 / 包装袋" style="padding:4px 6px;font-size:0.82rem;height:28px;">
+              <div id="cost-items-list" style="display:flex;flex-direction:column;gap:10px;">
+                ${breakdown.map((item, idx) => {
+                  const bCost = parseFloat(item.batch_cost) || 0;
+                  const bQty = parseFloat(item.batch_qty) || 1;
+                  const uCost = bQty > 0 ? (bCost / bQty) : 0;
+                  item.unit_cost = uCost;
+
+                  return `
+                    <div class="cost-row" data-idx="${idx}" style="background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px;">
+                      <div style="display:grid;grid-template-columns:1.8fr 1.2fr 1.2fr 1.2fr auto;gap:8px;align-items:center;">
+                        <div>
+                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">材料/配件名称</label>
+                          <input type="text" class="form-input cost-item-name" value="${item.name || ''}" placeholder="e.g. 金属币 / 包装袋" style="padding:4px 6px;font-size:0.85rem;height:28px;">
+                        </div>
+                        <div>
+                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">进货总花费 (RM)</label>
+                          <input type="number" step="0.10" class="form-input cost-item-cost" value="${item.batch_cost ?? 0}" placeholder="e.g. 1500" style="padding:4px 6px;font-size:0.85rem;height:28px;">
+                        </div>
+                        <div>
+                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">进货总数量 (个/pcs)</label>
+                          <input type="number" step="1" min="1" class="form-input cost-item-qty" value="${item.batch_qty ?? 1000}" placeholder="e.g. 1000" style="padding:4px 6px;font-size:0.85rem;height:28px;">
+                        </div>
+                        <div style="text-align:right;">
+                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">折合单件成本</label>
+                          <span class="num cost-item-unit" style="font-weight:800;font-size:0.92rem;color:var(--color-brown);line-height:28px;display:inline-block;">
+                            RM ${uCost < 0.1 && (uCost * 100) % 1 !== 0 ? uCost.toFixed(3) : uCost.toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <label style="font-size:0.7rem;visibility:hidden;display:block;margin-bottom:2px;">Del</label>
+                          <button type="button" class="btn btn-sm btn-secondary btn-del-cost-item" data-idx="${idx}" style="padding:4px 6px;color:var(--text-muted);height:28px;" ${breakdown.length <= 1 ? 'disabled' : ''} title="删除此项">
+                            ${renderIcon('trash', 14)}
+                          </button>
+                        </div>
                       </div>
-                      <div>
-                        <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Batch RM</label>
-                        <input type="number" step="0.10" class="form-input cost-item-cost" value="${item.batch_cost ?? 10}" placeholder="20.00" style="padding:4px 6px;font-size:0.82rem;height:28px;">
-                      </div>
-                      <div>
-                        <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Batch Qty</label>
-                        <input type="number" step="1" min="1" class="form-input cost-item-qty" value="${item.batch_qty ?? 1}" placeholder="20" style="padding:4px 6px;font-size:0.82rem;height:28px;">
-                      </div>
-                      <div style="text-align:right;">
-                        <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Unit Cost</label>
-                        <span class="num cost-item-unit" style="font-weight:700;font-size:0.85rem;color:var(--color-brown);line-height:28px;">
-                          RM ${item.unit_cost.toFixed(2)}
-                        </span>
-                      </div>
-                      <div>
-                        <label style="font-size:0.68rem;visibility:hidden;display:block;">Del</label>
-                        <button type="button" class="btn btn-sm btn-secondary btn-del-cost-item" data-idx="${idx}" style="padding:4px 6px;color:var(--text-muted);height:28px;" ${breakdown.length <= 1 ? 'disabled' : ''}>
-                          ${renderIcon('trash', 14)}
-                        </button>
+
+                      <!-- Quick batch quantity presets & notes -->
+                      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-light);gap:8px;flex-wrap:wrap;">
+                        <div style="display:flex;gap:4px;align-items:center;">
+                          <span style="font-size:0.68rem;color:var(--text-muted);">快捷数量:</span>
+                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="100" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">100个</button>
+                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="200" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">200个</button>
+                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="500" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">500个</button>
+                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="1000" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">1000个</button>
+                        </div>
+                        <input type="text" class="form-input cost-item-notes" value="${item.notes || ''}" placeholder="进货批次备注 (e.g. 淘宝1000个起订 / 500包一批)" style="padding:2px 8px;font-size:0.75rem;height:24px;border-style:dashed;max-width:280px;flex:1;">
                       </div>
                     </div>
-                    <div style="margin-top:4px;">
-                      <input type="text" class="form-input cost-item-notes" value="${item.notes || ''}" placeholder="Notes (e.g. 淘宝20个一包批发 / 200张一卷)" style="padding:2px 6px;font-size:0.75rem;height:24px;border-style:dashed;">
-                    </div>
-                  </div>
-                `).join('')}
+                  `;
+                }).join('')}
               </div>
 
               <!-- Computed Sum Banner -->
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:8px;border-top:1px dashed var(--border-light);">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--border-light);">
                 <div>
-                  <span style="font-size:0.78rem;color:var(--text-muted);font-weight:600;">Total Itemized Cost:</span>
-                  <span class="num" style="font-size:1.15rem;font-weight:800;color:var(--color-brown);margin-left:6px;">
-                    RM ${totalComputed.toFixed(2)} / unit
+                  <span style="font-size:0.82rem;color:var(--text-muted);font-weight:600;">单件累计成本 (Total Itemized Cost):</span>
+                  <span id="total-itemized-cost-display" class="num" style="font-size:1.25rem;font-weight:800;color:var(--color-brown);margin-left:8px;">
+                    RM 0.00 / 件
                   </span>
                 </div>
-                <button type="button" class="btn btn-sm btn-primary" id="btn-apply-computed-cost" style="font-size:0.75rem;padding:4px 10px;">
-                  ⚡ Use Computed Cost
+                <button type="button" class="btn btn-sm btn-primary" id="btn-apply-computed-cost" style="font-size:0.75rem;padding:4px 12px;">
+                  ⚡ 同步至最终单件成本
                 </button>
               </div>
             </div>
@@ -7433,24 +7504,24 @@ function openQuickCostModal(prod) {
             <!-- Unit Cost Input -->
             <div class="grid-2">
               <div class="form-group">
-                <label class="form-label" style="font-weight:700;">Final Unit Cost (RM)</label>
-                <input type="number" step="0.05" id="new-cost-input" class="form-input number-input" value="${prod.cost || totalComputed}" style="font-size:1.05rem;font-weight:700;color:var(--color-brown-dark);">
+                <label class="form-label" style="font-weight:700;">最终单件成本 / Final Unit Cost (RM)</label>
+                <input type="number" step="0.01" id="new-cost-input" class="form-input number-input" value="${prod.cost || 0}" style="font-size:1.15rem;font-weight:700;color:var(--color-brown-dark);">
               </div>
               <div class="form-group">
-                <label class="form-label">Cost Update Reason</label>
-                <input type="text" id="cost-reason-input" class="form-input" placeholder="e.g. Added packaging and sticker breakdown">
+                <label class="form-label">成本变更说明 (Reason)</label>
+                <input type="text" id="cost-reason-input" class="form-input" placeholder="e.g. 进货批量换算（1000个金属币+包装）">
               </div>
             </div>
 
             <div class="form-group">
-              <label class="form-label">General Cost Notes (备注)</label>
-              <textarea id="cost-notes-textarea" class="form-textarea" rows="2" placeholder="e.g. Mukichip成本包含钥匙圈RM10 + 包装(20个)RM20 + 包装贴纸(200个)RM20">${prod.cost_notes || ''}</textarea>
+              <label class="form-label">通用备注 (General Notes)</label>
+              <textarea id="cost-notes-textarea" class="form-textarea" rows="2" placeholder="e.g. 进货包含：金属币1000个RM1500 + 包装袋500个RM25 + 贴纸1000个RM20">${prod.cost_notes || ''}</textarea>
             </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" id="modal-cost-abort-btn">Cancel</button>
             <button type="button" class="btn btn-primary" id="modal-cost-save-btn">
-              Save Cost &amp; Breakdown
+              保存材料细项与单件成本
             </button>
           </div>
         </div>
@@ -7460,10 +7531,35 @@ function openQuickCostModal(prod) {
     document.getElementById('modal-close-btn').addEventListener('click', closeModal);
     document.getElementById('modal-cost-abort-btn').addEventListener('click', closeModal);
 
+    // Live calculation helper
+    function recalculateAll() {
+      let total = 0;
+      container.querySelectorAll('.cost-row').forEach(row => {
+        const costInput = row.querySelector('.cost-item-cost');
+        const qtyInput = row.querySelector('.cost-item-qty');
+        const unitDisplay = row.querySelector('.cost-item-unit');
+
+        const bCost = parseFloat(costInput?.value) || 0;
+        const bQty = parseFloat(qtyInput?.value) || 1;
+        const uCost = bQty > 0 ? (bCost / bQty) : 0;
+
+        if (unitDisplay) {
+          unitDisplay.textContent = `RM ${uCost < 0.1 && (uCost * 100) % 1 !== 0 ? uCost.toFixed(3) : uCost.toFixed(2)}`;
+        }
+        total += uCost;
+      });
+
+      const totalDisplay = document.getElementById('total-itemized-cost-display');
+      if (totalDisplay) {
+        totalDisplay.textContent = `RM ${total < 0.1 && (total * 100) % 1 !== 0 ? total.toFixed(3) : total.toFixed(2)} / 件`;
+      }
+      return total;
+    }
+
     // Add cost item row
     document.getElementById('btn-add-cost-item').addEventListener('click', () => {
       saveInputsToBreakdown();
-      breakdown.push({ name: '', batch_cost: 0, batch_qty: 1, unit_cost: 0, notes: '' });
+      breakdown.push({ name: '', batch_cost: 0, batch_qty: 1000, unit_cost: 0, notes: '' });
       renderModalContent();
     });
 
@@ -7474,20 +7570,32 @@ function openQuickCostModal(prod) {
         const idx = parseInt(btn.getAttribute('data-idx'), 10);
         breakdown.splice(idx, 1);
         if (breakdown.length === 0) {
-          breakdown.push({ name: 'Direct Item', batch_cost: 0, batch_qty: 1, unit_cost: 0, notes: '' });
+          breakdown.push({ name: '主体配件', batch_cost: 0, batch_qty: 1000, unit_cost: 0, notes: '' });
         }
         renderModalContent();
       });
     });
 
-    // Recalculate on input
+    // Preset quantity buttons (100, 200, 500, 1000)
+    container.querySelectorAll('.btn-preset-qty').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const row = btn.closest('.cost-row');
+        if (row) {
+          const qtyInput = row.querySelector('.cost-item-qty');
+          if (qtyInput) {
+            qtyInput.value = btn.getAttribute('data-qty');
+            const total = recalculateAll();
+            document.getElementById('new-cost-input').value = total.toFixed(2);
+          }
+        }
+      });
+    });
+
+    // Real-time live recalculate on any cost or quantity keystroke
     container.querySelectorAll('.cost-item-cost, .cost-item-qty').forEach(input => {
       input.addEventListener('input', () => {
-        saveInputsToBreakdown();
-        let sum = 0;
-        breakdown.forEach(item => sum += item.unit_cost);
-        sum = Math.round(sum * 100) / 100;
-        container.querySelector('.cost-item-unit').textContent = `RM ${sum.toFixed(2)}`;
+        const total = recalculateAll();
+        document.getElementById('new-cost-input').value = total.toFixed(2);
       });
     });
 
@@ -7495,10 +7603,9 @@ function openQuickCostModal(prod) {
     const applyBtn = document.getElementById('btn-apply-computed-cost');
     if (applyBtn) {
       applyBtn.addEventListener('click', () => {
-        saveInputsToBreakdown();
-        let sum = 0;
-        breakdown.forEach(item => sum += item.unit_cost);
-        document.getElementById('new-cost-input').value = sum.toFixed(2);
+        const total = recalculateAll();
+        document.getElementById('new-cost-input').value = total.toFixed(2);
+        showToast(`已填入单件折合成本: RM ${total.toFixed(2)}`, 'success');
       });
     }
 
@@ -7516,13 +7623,16 @@ function openQuickCostModal(prod) {
           product.cost_notes = costNotes;
           await db.putItem('products', product);
         }
-        await updateProductCost(prod.id, newCost, reason || 'Material & packaging cost breakdown update');
-        showToast('Cost breakdown and unit cost saved!', 'success');
+        await updateProductCost(prod.id, newCost, reason || '批量进货成本拆分与核算');
+        showToast('材料细项与单件成本已更新！', 'success');
         closeModal();
       } catch (err) {
         alert(`Could not save cost: ${err.message}`);
       }
     });
+
+    // Initial recalculation on render
+    recalculateAll();
   }
 
   function saveInputsToBreakdown() {
@@ -7534,7 +7644,7 @@ function openQuickCostModal(prod) {
         breakdown[idx].batch_qty = parseFloat(row.querySelector('.cost-item-qty')?.value) || 1;
         breakdown[idx].notes = row.querySelector('.cost-item-notes')?.value || '';
         const uCost = breakdown[idx].batch_qty > 0 ? (breakdown[idx].batch_cost / breakdown[idx].batch_qty) : 0;
-        breakdown[idx].unit_cost = Math.round(uCost * 100) / 100;
+        breakdown[idx].unit_cost = uCost;
       }
     });
   }
