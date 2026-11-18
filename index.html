@@ -2326,22 +2326,47 @@ class AppStore {
 
   // --- Cart Management for POS ---
 
+  // Calculate unit price considering tiered quantity pricing
+  getProductUnitPrice(product, quantity = 1) {
+    if (!product) return 0;
+    const basePrice = Number(product.selling_price) || 0;
+    const tiers = Array.isArray(product.pricing_tiers) ? product.pricing_tiers : [];
+    if (tiers.length === 0) return basePrice;
+
+    // Sort tiers descending by min_qty: higher quantity tiers apply first
+    const validTiers = [...tiers]
+      .filter(t => (Number(t.min_qty) || 0) > 1 && (Number(t.unit_price) || 0) > 0)
+      .sort((a, b) => Number(b.min_qty) - Number(a.min_qty));
+
+    for (const tier of validTiers) {
+      if (quantity >= Number(tier.min_qty)) {
+        return Number(tier.unit_price);
+      }
+    }
+    return basePrice;
+  }
+
   addToCart(productId, quantity = 1, isFreeGift = false) {
     const product = this.products.find(p => p.id === productId);
     if (!product) return false;
 
-    // Check if an existing line with matching free gift status exists
     const existingIndex = this.cart.findIndex(item => item.productId === productId && Boolean(item.isFreeGift) === Boolean(isFreeGift));
     if (existingIndex >= 0) {
       this.cart[existingIndex].quantity += quantity;
+      const item = this.cart[existingIndex];
+      // Automatically apply tiered pricing if not custom price / free gift
+      if (!item.isFreeGift && !item.isCustomPrice && item.product) {
+        item.unitPrice = this.getProductUnitPrice(item.product, item.quantity);
+      }
     } else {
       const cartItemId = 'citem_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+      const unitPrice = isFreeGift ? 0 : this.getProductUnitPrice(product, quantity);
       this.cart.push({
         cartItemId,
         productId,
         product,
         quantity,
-        unitPrice: isFreeGift ? 0 : (Number(product.selling_price) || 0),
+        unitPrice,
         unitCost: this.getComputedCost(productId),
         isCustomPrice: Boolean(isFreeGift),
         isFreeGift: Boolean(isFreeGift)
@@ -2380,6 +2405,9 @@ class AppStore {
     if (item.quantity <= 0) {
       this.removeFromCart(identifier);
     } else {
+      if (!item.isFreeGift && !item.isCustomPrice && item.product) {
+        item.unitPrice = this.getProductUnitPrice(item.product, item.quantity);
+      }
       this.notify('cart', this.cart);
     }
   }
@@ -2393,6 +2421,9 @@ class AppStore {
       this.removeFromCart(identifier);
     } else {
       item.quantity = qty;
+      if (!item.isFreeGift && !item.isCustomPrice && item.product) {
+        item.unitPrice = this.getProductUnitPrice(item.product, item.quantity);
+      }
       this.notify('cart', this.cart);
     }
   }
@@ -3133,32 +3164,30 @@ async function deleteOrder(orderId) {
 /**
  * Update product cost and log historical cost change
  */
-async function updateProductCost(productId, newCost, notes = '') {
+async function updateProductCost(productId, newCost, notes = '', date = '') {
   const product = await db.getById('products', productId);
   if (!product) throw new Error('Product not found.');
 
   const previousCost = Number(product.cost) || 0;
   const parsedNewCost = round(Number(newCost) || 0);
 
-  if (previousCost === parsedNewCost) {
-    return product;
-  }
-
   const timestamp = new Date().toISOString();
+  const entryDate = date || timestamp.split('T')[0];
 
   // Update product cost
   product.cost = parsedNewCost;
   product.updated_at = timestamp;
   await db.putItem('products', product);
 
-  // Record cost change history (previous orders remain untouched!)
+  // Record cost change history with date and notes
   await db.addItem('cost_history', {
     id: generateId('cost'),
     product_id: productId,
     product_name: product.name,
     previous_cost: previousCost,
     new_cost: parsedNewCost,
-    notes: notes || 'Supplier / production cost update',
+    notes: notes || 'Bulk purchase cost breakdown update',
+    date: entryDate,
     timestamp
   });
 
@@ -4581,8 +4610,13 @@ function renderPos() {
                 </div>
 
                 <div style="margin-top:12px;">
-                  <div style="font-size:1.15rem;font-weight:700;font-family:var(--font-mono);color:var(--color-brown);">
-                    ${formatRM(prod.selling_price)}
+                  <div style="font-size:1.15rem;font-weight:700;font-family:var(--font-mono);color:var(--color-brown);display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
+                    <span>${formatRM(prod.selling_price)}</span>
+                    ${prod.pricing_tiers && prod.pricing_tiers.length > 0 ? `
+                      <span class="badge" style="font-size:0.65rem;font-weight:700;background:var(--bg-secondary);color:var(--color-brown-dark);border:1px solid var(--border-light);padding:1px 5px;" title="Volume Tier: Buy ${prod.pricing_tiers[0].min_qty}+ @ RM ${Number(prod.pricing_tiers[0].unit_price).toFixed(2)}">
+                        ${prod.pricing_tiers[0].min_qty}+ @ RM ${Number(prod.pricing_tiers[0].unit_price).toFixed(2)}
+                      </span>
+                    ` : ''}
                   </div>
                   
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:0.75rem;">
@@ -4665,6 +4699,11 @@ function renderPos() {
                     </button>
 
                     ${item.isCustomPrice && !item.isFreeGift ? '<span class="badge badge-bundle" style="font-size:0.65rem;padding:1px 5px;">Custom Price</span>' : ''}
+                    ${!item.isFreeGift && !item.isCustomPrice && item.product?.pricing_tiers && item.product.pricing_tiers.some(t => Number(item.quantity) >= Number(t.min_qty)) ? `
+                      <span class="badge" style="background:var(--color-brown);color:#fff;font-size:0.65rem;font-weight:700;padding:1px 5px;" title="Volume Tiered pricing active">
+                        Tiered Rate
+                      </span>
+                    ` : ''}
                   </div>
                 </div>
 
@@ -6421,12 +6460,15 @@ function renderProductList(products) {
                   <td data-label="Category"><span class="badge badge-outline">${p.category}</span></td>
                   <td data-label="Price" class="num" style="text-align:right;font-weight:700;color:var(--color-brown);font-size:1.05rem;">
                     ${formatRM(p.selling_price)}
+                    ${p.pricing_tiers && p.pricing_tiers.length > 0 ? `
+                      <div><span class="badge" style="font-size:0.65rem;font-weight:700;background:var(--bg-secondary);color:var(--color-brown-dark);padding:1px 5px;margin-top:2px;display:inline-block;" title="Volume Discount: Buy ${p.pricing_tiers[0].min_qty}+ @ RM ${Number(p.pricing_tiers[0].unit_price).toFixed(2)}">${p.pricing_tiers[0].min_qty}+ @ RM ${Number(p.pricing_tiers[0].unit_price).toFixed(2)}</span></div>
+                    ` : ''}
                   </td>
                   <td data-label="Unit Cost" class="num" style="text-align:right;color:var(--text-muted);">
                     <div style="font-weight:700;color:var(--text-main);">${formatRM(computedCost)}</div>
                     ${p.cost_breakdown && p.cost_breakdown.length > 0 ? `
-                      <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);font-size:0.65rem;font-weight:600;padding:1px 5px;margin-top:2px;display:inline-block;cursor:pointer;" data-action="quick-edit-cost" data-product-id="${p.id}" title="Click to view material and packaging breakdown">
-                        ${p.cost_breakdown.length} items
+                      <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);font-size:0.65rem;font-weight:600;padding:1px 5px;margin-top:2px;display:inline-block;cursor:pointer;" data-action="quick-edit-cost" data-product-id="${p.id}" title="Click to update material and packaging breakdown">
+                        ${p.cost_breakdown.length} components
                       </span>
                     ` : ''}
                   </td>
@@ -6447,8 +6489,8 @@ function renderProductList(products) {
                       : `<span class="badge badge-cancelled">Disabled</span>`}
                   </td>
                   <td data-label="Actions" class="td-actions" style="text-align:right;white-space:nowrap;">
-                    <button type="button" class="btn btn-sm btn-secondary" data-action="quick-edit-cost" data-product-id="${p.id}">
-                      Cost
+                    <button type="button" class="btn btn-sm btn-secondary" data-action="quick-edit-cost" data-product-id="${p.id}" title="Update Unit Cost & Bulk Breakdown">
+                      Update Cost
                     </button>
                     <button type="button" class="btn btn-sm btn-secondary" data-action="edit-product" data-product-id="${p.id}">
                       Edit
@@ -8342,191 +8384,404 @@ function openProductModal(prod = null) {
   const isEdit = !!prod;
   const categories = store.getCategories();
 
-  container.innerHTML = `
-    <div class="modal-overlay">
-      <div class="modal-card" style="max-width:500px;">
-        <div class="modal-header">
-          <div class="modal-title">${isEdit ? 'Edit Product' : 'Add New Product'}</div>
-          <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label">Product Name</label>
-            <input type="text" id="prod-name-input" class="form-input" value="${prod?.name || ''}" placeholder="e.g. Clicker Sticker">
-          </div>
+  // Working state for tiers and cost breakdown
+  let pricingTiers = Array.isArray(prod?.pricing_tiers) && prod.pricing_tiers.length > 0
+    ? JSON.parse(JSON.stringify(prod.pricing_tiers))
+    : [];
 
-          <div class="grid-2">
-            <div class="form-group">
-              <label class="form-label">Category</label>
-              <select id="prod-cat-select" class="form-select">
-                ${categories.map(c => `
-                  <option value="${c}" ${prod?.category === c ? 'selected' : ''}>${c}</option>
-                `).join('')}
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Is Bundle Set?</label>
-              <select id="prod-bundle-select" class="form-select">
-                <option value="false" ${!prod?.is_bundle ? 'selected' : ''}>Single Physical Item</option>
-                <option value="true" ${prod?.is_bundle ? 'selected' : ''}>Bundle (Uses Recipe)</option>
-              </select>
-            </div>
-          </div>
+  let breakdown = Array.isArray(prod?.cost_breakdown) && prod.cost_breakdown.length > 0
+    ? JSON.parse(JSON.stringify(prod.cost_breakdown))
+    : [];
 
-          <div class="grid-2">
-            <div class="form-group">
-              <label class="form-label">Selling Price (RM)</label>
-              <input type="number" step="0.05" id="prod-price-input" class="form-input number-input" value="${prod ? prod.selling_price : 0}">
+  const defaultDate = prod?.date || new Date().toISOString().split('T')[0];
+
+  function renderProductModal() {
+    container.innerHTML = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width:680px;width:95%;max-height:88vh;display:flex;flex-direction:column;">
+          <div class="modal-header">
+            <div class="modal-title">${isEdit ? 'Edit Product' : 'Add New Product'}</div>
+            <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
+          </div>
+          <div class="modal-body" style="overflow-y:auto;max-height:calc(88vh - 120px);padding:16px;">
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">Date Added / Restock Date</label>
+                <input type="date" id="prod-date-input" class="form-input" value="${defaultDate}">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Category</label>
+                <select id="prod-cat-select" class="form-select">
+                  ${categories.map(c => `
+                    <option value="${c}" ${prod?.category === c ? 'selected' : ''}>${c}</option>
+                  `).join('')}
+                </select>
+              </div>
             </div>
-            <div class="form-group">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                <label class="form-label" style="margin-bottom:0;">Estimated Cost (RM)</label>
-                <button type="button" id="btn-toggle-bulk-calc" style="background:none;border:none;color:var(--color-brown);font-size:0.75rem;cursor:pointer;font-weight:700;padding:0;">
-                  Bulk Purchase Calculator (100/1000 pcs)
+
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">Product Name</label>
+                <input type="text" id="prod-name-input" class="form-input" value="${prod?.name || ''}" placeholder="e.g. Clicker / Sticker / Keychain">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Is Bundle Set?</label>
+                <select id="prod-bundle-select" class="form-select">
+                  <option value="false" ${!prod?.is_bundle ? 'selected' : ''}>Single Physical Item</option>
+                  <option value="true" ${prod?.is_bundle ? 'selected' : ''}>Bundle (Uses Recipe)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Selling Price & Tiered Volume Pricing -->
+            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;margin-bottom:14px;">
+              <div class="form-group" style="margin-bottom:10px;">
+                <label class="form-label" style="font-weight:700;color:var(--color-brown);">Base Selling Price (RM)</label>
+                <input type="number" step="0.05" id="prod-price-input" class="form-input number-input" value="${prod ? prod.selling_price : 0}" style="max-width:200px;font-size:1.05rem;font-weight:700;">
+              </div>
+
+              <!-- Tiered Pricing Header -->
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border-light);">
+                <div>
+                  <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--color-brown-dark);">
+                    Tiered Quantity Pricing (Volume Discounts / Optional)
+                  </span>
+                  <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">
+                    e.g. Buy 2+ pcs @ RM 17.50/ea (Clicker), or 3+ pcs @ RM 6.00/ea (Stickers). Auto-applies in POS.
+                  </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-secondary" id="btn-add-pricing-tier" style="font-size:0.75rem;padding:3px 10px;background:#ffffff;">
+                  ${renderIcon('plus', 12)}
+                  <span>+ Add Tier</span>
                 </button>
               </div>
-              <input type="number" step="0.01" id="prod-cost-input" class="form-input number-input" value="${prod ? prod.cost : 0}">
-              <!-- Bulk Purchase Calculator Helper -->
-              <div id="bulk-calc-panel" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 10px;margin-top:6px;">
-                <div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:6px;">
-                  Bulk purchase? Enter total invoice cost and quantity to compute unit cost:
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-                  <div>
-                    <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Total Cost (RM)</label>
-                    <input type="number" step="0.10" id="quick-batch-cost" class="form-input" placeholder="e.g. 1500" style="padding:3px 6px;font-size:0.82rem;height:26px;">
+
+              <div id="pricing-tiers-list" style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+                ${pricingTiers.length === 0 ? `
+                  <div id="no-tiers-placeholder" style="font-size:0.75rem;color:var(--text-muted);font-style:italic;padding:4px 0;">
+                    No tiered discounts set. Item will sell at base price for any quantity.
                   </div>
-                  <div>
-                    <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Total Qty (pcs)</label>
-                    <input type="number" step="1" id="quick-batch-qty" class="form-input" placeholder="e.g. 1000" style="padding:3px 6px;font-size:0.82rem;height:26px;">
+                ` : pricingTiers.map((tier, idx) => `
+                  <div class="tier-row" data-idx="${idx}" style="display:grid;grid-template-columns:1.2fr 1.5fr auto;gap:8px;align-items:center;background:#ffffff;padding:8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);">
+                    <div>
+                      <label style="font-size:0.68rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Min Quantity (pcs)</label>
+                      <input type="number" min="2" step="1" class="form-input tier-min-qty" value="${tier.min_qty ?? 2}" placeholder="e.g. 2" style="padding:3px 6px;font-size:0.85rem;height:28px;">
+                    </div>
+                    <div>
+                      <label style="font-size:0.68rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Discount Unit Price (RM)</label>
+                      <input type="number" step="0.05" class="form-input tier-price" value="${tier.unit_price ?? 0}" placeholder="e.g. 17.50" style="padding:3px 6px;font-size:0.85rem;height:28px;">
+                    </div>
+                    <div>
+                      <label style="font-size:0.68rem;visibility:hidden;display:block;margin-bottom:2px;">Del</label>
+                      <button type="button" class="btn btn-sm btn-secondary btn-del-tier" data-idx="${idx}" style="padding:4px 6px;color:var(--text-muted);height:28px;" title="Delete Tier">
+                        ${renderIcon('trash', 14)}
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div style="margin-top:6px;display:flex;justify-content:space-between;align-items:center;">
-                  <span style="font-size:0.8rem;font-weight:700;color:var(--color-brown);">
-                    Unit Cost: <strong id="quick-batch-result">RM 0.00</strong>/ea
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Cost Breakdown & Bulk Calculator (Directly embedded) -->
+            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;margin-bottom:14px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <div>
+                  <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--color-brown);">
+                    Cost Breakdown &amp; Bulk Calculator (Optional)
                   </span>
-                  <button type="button" class="btn btn-sm btn-primary" id="btn-apply-batch-calc" style="font-size:0.7rem;padding:2px 8px;">
-                    Apply Unit Cost
+                  <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">
+                    Enter bulk batch quantity (e.g. 100/1000 pcs) + packaging components to auto-compute unit cost.
+                  </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-secondary" id="btn-modal-add-component" style="font-size:0.75rem;padding:3px 10px;background:#ffffff;">
+                  ${renderIcon('plus', 12)}
+                  <span>+ Add Component</span>
+                </button>
+              </div>
+
+              <div id="modal-cost-components-list" style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+                ${breakdown.length === 0 ? `
+                  <div id="no-components-placeholder" style="font-size:0.75rem;color:var(--text-muted);font-style:italic;padding:4px 0;">
+                    No bulk breakdown components yet. Click "+ Add Component" to calculate from batch factory invoice.
+                  </div>
+                ` : breakdown.map((item, idx) => {
+                  const bCost = parseFloat(item.batch_cost) || 0;
+                  const bQty = parseFloat(item.batch_qty) || 1;
+                  const uCost = bQty > 0 ? (bCost / bQty) : 0;
+                  item.unit_cost = uCost;
+
+                  return `
+                    <div class="prod-breakdown-row" data-idx="${idx}" style="background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px;">
+                      <div style="display:grid;grid-template-columns:1.8fr 1.1fr 1.1fr 1.1fr auto;gap:8px;align-items:center;">
+                        <div>
+                          <label style="font-size:0.68rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Component Name</label>
+                          <input type="text" class="form-input comp-name" value="${item.name || ''}" placeholder="e.g. Acrylic Body / Bag / Card" style="padding:3px 6px;font-size:0.82rem;height:28px;">
+                        </div>
+                        <div>
+                          <label style="font-size:0.68rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Total Qty (pcs)</label>
+                          <input type="number" step="1" min="1" class="form-input comp-qty" value="${item.batch_qty ?? 1000}" placeholder="e.g. 1000" style="padding:3px 6px;font-size:0.82rem;height:28px;">
+                        </div>
+                        <div>
+                          <label style="font-size:0.68rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Total Cost (RM)</label>
+                          <input type="number" step="0.10" class="form-input comp-cost" value="${item.batch_cost ?? 0}" placeholder="e.g. 1500" style="padding:3px 6px;font-size:0.82rem;height:28px;">
+                        </div>
+                        <div style="text-align:right;">
+                          <label style="font-size:0.68rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Unit Cost</label>
+                          <span class="num comp-unit" style="font-weight:800;font-size:0.88rem;color:var(--color-brown);line-height:28px;display:inline-block;">
+                            RM ${uCost < 0.1 && (uCost * 100) % 1 !== 0 ? uCost.toFixed(3) : uCost.toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <label style="font-size:0.68rem;visibility:hidden;display:block;margin-bottom:2px;">Del</label>
+                          <button type="button" class="btn btn-sm btn-secondary btn-del-comp" data-idx="${idx}" style="padding:4px 6px;color:var(--text-muted);height:28px;" title="Delete Component">
+                            ${renderIcon('trash', 14)}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+
+              <!-- Computed Breakdown Total and Final Unit Cost -->
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:8px;border-top:1px dashed var(--border-light);flex-wrap:wrap;gap:8px;">
+                <span style="font-size:0.8rem;font-weight:700;color:var(--color-brown-dark);">
+                  Computed Component Total: <strong id="modal-breakdown-unit-sum" style="color:var(--color-brown);font-size:1rem;">RM 0.00</strong> / unit
+                </span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <span style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">Final Unit Cost (RM):</span>
+                  <input type="number" step="0.01" id="prod-cost-input" class="form-input number-input" value="${prod ? prod.cost : 0}" style="width:110px;font-weight:700;height:30px;padding:2px 8px;">
+                  <button type="button" class="btn btn-sm btn-secondary" id="btn-modal-sync-cost" style="font-size:0.72rem;padding:3px 8px;" title="Copy computed breakdown total into Final Unit Cost">
+                    Apply Breakdown
                   </button>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div class="grid-2" id="prod-stock-group" style="${prod?.is_bundle ? 'display:none;' : ''}">
-            <div class="form-group">
-              <label class="form-label">Sellable Stock</label>
-              <input type="number" id="prod-stock-input" class="form-input number-input" value="${prod ? (prod.stock ?? 0) : 0}">
+            <!-- Stock Group -->
+            <div class="grid-2" id="prod-stock-group" style="${prod?.is_bundle ? 'display:none;' : ''}">
+              <div class="form-group">
+                <label class="form-label">Sellable Stock</label>
+                <input type="number" id="prod-stock-input" class="form-input number-input" value="${prod ? (prod.stock ?? 0) : 0}">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Display Sample</label>
+                <input type="number" id="prod-display-stock-input" class="form-input number-input" value="${prod ? (prod.display_stock ?? 0) : 0}">
+              </div>
             </div>
-            <div class="form-group">
-              <label class="form-label">Display Sample</label>
-              <input type="number" id="prod-display-stock-input" class="form-input number-input" value="${prod ? (prod.display_stock ?? 0) : 0}">
-            </div>
-          </div>
 
-          <div class="form-group">
-            <label class="form-label">Description / Notes (Optional)</label>
-            <textarea id="prod-desc-input" class="form-textarea" rows="2" placeholder="Optional notes or details">${prod?.description || ''}</textarea>
+            <div class="form-group">
+              <label class="form-label">Description / Notes (Optional)</label>
+              <textarea id="prod-desc-input" class="form-textarea" rows="2" placeholder="Optional notes or details">${prod?.description || ''}</textarea>
+            </div>
           </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" id="modal-prod-abort-btn">Cancel</button>
-          <button type="button" class="btn btn-primary" id="modal-prod-save-btn">
-            ${isEdit ? 'Save Changes' : 'Create Product'}
-          </button>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="modal-prod-abort-btn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="modal-prod-save-btn">
+              ${isEdit ? 'Save Changes' : 'Create Product'}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  `;
+    `;
 
-  document.getElementById('modal-close-btn').addEventListener('click', closeModal);
-  document.getElementById('modal-prod-abort-btn').addEventListener('click', closeModal);
+    document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+    document.getElementById('modal-prod-abort-btn').addEventListener('click', closeModal);
 
-  const bundleSelect = document.getElementById('prod-bundle-select');
-  bundleSelect.addEventListener('change', (e) => {
-    const stockGrp = document.getElementById('prod-stock-group');
-    if (stockGrp) stockGrp.style.display = e.target.value === 'true' ? 'none' : 'block';
-  });
-
-  // Bulk Purchase Calculator helper in Product Modal
-  const btnToggleBulk = document.getElementById('btn-toggle-bulk-calc');
-  const bulkPanel = document.getElementById('bulk-calc-panel');
-  const quickBatchCost = document.getElementById('quick-batch-cost');
-  const quickBatchQty = document.getElementById('quick-batch-qty');
-  const quickBatchResult = document.getElementById('quick-batch-result');
-  const btnApplyBatch = document.getElementById('btn-apply-batch-calc');
-
-  if (btnToggleBulk && bulkPanel) {
-    btnToggleBulk.addEventListener('click', () => {
-      bulkPanel.style.display = bulkPanel.style.display === 'none' ? 'block' : 'none';
+    const bundleSelect = document.getElementById('prod-bundle-select');
+    bundleSelect.addEventListener('change', (e) => {
+      const stockGrp = document.getElementById('prod-stock-group');
+      if (stockGrp) stockGrp.style.display = e.target.value === 'true' ? 'none' : 'block';
     });
 
-    function updateQuickBatch() {
-      const c = parseFloat(quickBatchCost.value) || 0;
-      const q = parseFloat(quickBatchQty.value) || 0;
-      const unit = q > 0 ? (c / q) : 0;
-      quickBatchResult.textContent = `RM ${unit < 0.1 && (unit * 100) % 1 !== 0 ? unit.toFixed(3) : unit.toFixed(2)}`;
+    // Helper: recalculate breakdown components in Add Product Modal
+    function recalculateModalBreakdown() {
+      let total = 0;
+      container.querySelectorAll('.prod-breakdown-row').forEach(row => {
+        const qtyInput = row.querySelector('.comp-qty');
+        const costInput = row.querySelector('.comp-cost');
+        const unitDisplay = row.querySelector('.comp-unit');
+
+        const bCost = parseFloat(costInput?.value) || 0;
+        const bQty = parseFloat(qtyInput?.value) || 1;
+        const uCost = bQty > 0 ? (bCost / bQty) : 0;
+
+        if (unitDisplay) {
+          unitDisplay.textContent = `RM ${uCost < 0.1 && (uCost * 100) % 1 !== 0 ? uCost.toFixed(3) : uCost.toFixed(2)}`;
+        }
+        total += uCost;
+      });
+
+      const totalDisplay = document.getElementById('modal-breakdown-unit-sum');
+      if (totalDisplay) {
+        totalDisplay.textContent = `RM ${total < 0.1 && (total * 100) % 1 !== 0 ? total.toFixed(3) : total.toFixed(2)}`;
+      }
+      return total;
     }
 
-    quickBatchCost?.addEventListener('input', updateQuickBatch);
-    quickBatchQty?.addEventListener('input', updateQuickBatch);
+    function saveBreakdownInputs() {
+      container.querySelectorAll('.prod-breakdown-row').forEach(row => {
+        const idx = parseInt(row.getAttribute('data-idx'), 10);
+        if (breakdown[idx]) {
+          breakdown[idx].name = row.querySelector('.comp-name')?.value || '';
+          breakdown[idx].batch_qty = parseFloat(row.querySelector('.comp-qty')?.value) || 1;
+          breakdown[idx].batch_cost = parseFloat(row.querySelector('.comp-cost')?.value) || 0;
+          breakdown[idx].unit_cost = breakdown[idx].batch_qty > 0 ? (breakdown[idx].batch_cost / breakdown[idx].batch_qty) : 0;
+        }
+      });
+    }
 
-    btnApplyBatch?.addEventListener('click', () => {
-      const c = parseFloat(quickBatchCost.value) || 0;
-      const q = parseFloat(quickBatchQty.value) || 0;
-      if (q > 0) {
-        const unit = Math.round((c / q) * 1000) / 1000;
-        document.getElementById('prod-cost-input').value = unit.toFixed(2);
-        bulkPanel.style.display = 'none';
-        showToast(`Unit cost RM ${unit.toFixed(2)} applied!`, 'success');
+    function saveTierInputs() {
+      container.querySelectorAll('.tier-row').forEach(row => {
+        const idx = parseInt(row.getAttribute('data-idx'), 10);
+        if (pricingTiers[idx]) {
+          pricingTiers[idx].min_qty = parseInt(row.querySelector('.tier-min-qty')?.value, 10) || 2;
+          pricingTiers[idx].unit_price = parseFloat(row.querySelector('.tier-price')?.value) || 0;
+        }
+      });
+    }
+
+    // Breakdown input live listeners
+    container.querySelectorAll('.comp-qty, .comp-cost').forEach(input => {
+      input.addEventListener('input', () => {
+        const total = recalculateModalBreakdown();
+        const costInput = document.getElementById('prod-cost-input');
+        if (costInput && (parseFloat(costInput.value) === 0 || costInput.getAttribute('data-auto-synced') === 'true')) {
+          costInput.value = total.toFixed(2);
+          costInput.setAttribute('data-auto-synced', 'true');
+        }
+      });
+    });
+
+    // Sync button
+    document.getElementById('btn-modal-sync-cost')?.addEventListener('click', () => {
+      const total = recalculateModalBreakdown();
+      const costInput = document.getElementById('prod-cost-input');
+      if (costInput) {
+        costInput.value = total.toFixed(2);
+        costInput.setAttribute('data-auto-synced', 'true');
+        showToast(`Calculated cost RM ${total.toFixed(2)} applied!`, 'success');
       }
     });
+
+    // Add Component button
+    document.getElementById('btn-modal-add-component')?.addEventListener('click', () => {
+      saveBreakdownInputs();
+      saveTierInputs();
+      breakdown.push({ name: '', batch_qty: 1000, batch_cost: 0, unit_cost: 0 });
+      renderProductModal();
+    });
+
+    // Delete Component button
+    container.querySelectorAll('.btn-del-comp').forEach(btn => {
+      btn.addEventListener('click', () => {
+        saveBreakdownInputs();
+        saveTierInputs();
+        const idx = parseInt(btn.getAttribute('data-idx'), 10);
+        breakdown.splice(idx, 1);
+        renderProductModal();
+      });
+    });
+
+    // Add Pricing Tier button
+    document.getElementById('btn-add-pricing-tier')?.addEventListener('click', () => {
+      saveBreakdownInputs();
+      saveTierInputs();
+      pricingTiers.push({ min_qty: 2, unit_price: 0 });
+      renderProductModal();
+    });
+
+    // Delete Pricing Tier button
+    container.querySelectorAll('.btn-del-tier').forEach(btn => {
+      btn.addEventListener('click', () => {
+        saveBreakdownInputs();
+        saveTierInputs();
+        const idx = parseInt(btn.getAttribute('data-idx'), 10);
+        pricingTiers.splice(idx, 1);
+        renderProductModal();
+      });
+    });
+
+    // Save Product
+    document.getElementById('modal-prod-save-btn').addEventListener('click', async () => {
+      const name = document.getElementById('prod-name-input').value.trim();
+      if (!name) {
+        alert('Product name is required');
+        return;
+      }
+
+      saveBreakdownInputs();
+      saveTierInputs();
+
+      const prodDate = document.getElementById('prod-date-input').value || defaultDate;
+      const category = document.getElementById('prod-cat-select').value;
+      const isBundle = document.getElementById('prod-bundle-select').value === 'true';
+      const sellingPrice = round(parseFloat(document.getElementById('prod-price-input').value) || 0);
+      const cost = round(parseFloat(document.getElementById('prod-cost-input').value) || 0);
+      const stock = isBundle ? 0 : parseInt(document.getElementById('prod-stock-input').value, 10) || 0;
+      const displayStock = isBundle ? 0 : Math.max(0, parseInt(document.getElementById('prod-display-stock-input')?.value, 10) || 0);
+      const desc = document.getElementById('prod-desc-input').value.trim();
+
+      // Clean and sort pricing tiers
+      const validTiers = pricingTiers
+        .filter(t => (Number(t.min_qty) || 0) > 1 && (Number(t.unit_price) || 0) > 0)
+        .sort((a, b) => Number(b.min_qty) - Number(a.min_qty));
+
+      // Clean cost breakdown
+      const validBreakdown = breakdown.filter(b => (b.name && b.name.trim()) || (Number(b.batch_cost) || 0) > 0);
+
+      const timestamp = new Date().toISOString();
+      const productRecord = {
+        ...(prod || {}),
+        id: prod ? prod.id : generateId('prod'),
+        name,
+        date: prodDate,
+        category,
+        selling_price: sellingPrice,
+        cost,
+        stock,
+        sort_order: (prod && typeof prod.sort_order === 'number') ? prod.sort_order : (store.products.length + 1),
+        is_bundle: isBundle,
+        is_active: prod ? prod.is_active : true,
+        description: desc,
+        needs_config: false,
+        pricing_tiers: validTiers,
+        cost_breakdown: validBreakdown,
+        cost_notes: prod ? (prod.cost_notes || '') : '',
+        display_stock: displayStock,
+        created_at: prod ? prod.created_at : timestamp,
+        updated_at: timestamp
+      };
+
+      await db.putItem('products', productRecord);
+
+      // If new product and has cost, log initial cost history entry
+      if (!prod && cost > 0) {
+        await db.addItem('cost_history', {
+          id: generateId('cost'),
+          product_id: productRecord.id,
+          product_name: productRecord.name,
+          previous_cost: 0,
+          new_cost: cost,
+          notes: 'Initial product creation cost',
+          date: prodDate,
+          timestamp
+        });
+      }
+
+      await store.refreshAll();
+      showToast(`Product "${name}" saved!`, 'success');
+      closeModal();
+    });
+
+    // Initial recalculation on render
+    recalculateModalBreakdown();
   }
 
-  document.getElementById('modal-prod-save-btn').addEventListener('click', async () => {
-    const name = document.getElementById('prod-name-input').value.trim();
-    if (!name) {
-      alert('Product name is required');
-      return;
-    }
-
-    const category = document.getElementById('prod-cat-select').value;
-    const isBundle = document.getElementById('prod-bundle-select').value === 'true';
-    const sellingPrice = round(parseFloat(document.getElementById('prod-price-input').value) || 0);
-    const cost = round(parseFloat(document.getElementById('prod-cost-input').value) || 0);
-    const stock = isBundle ? 0 : parseInt(document.getElementById('prod-stock-input').value, 10) || 0;
-    const displayStock = isBundle ? 0 : Math.max(0, parseInt(document.getElementById('prod-display-stock-input')?.value, 10) || 0);
-    const desc = document.getElementById('prod-desc-input').value.trim();
-
-    const timestamp = new Date().toISOString();
-    const productRecord = {
-      ...(prod || {}),
-      id: prod ? prod.id : generateId('prod'),
-      name,
-      category,
-      selling_price: sellingPrice,
-      cost,
-      stock,
-      sort_order: (prod && typeof prod.sort_order === 'number') ? prod.sort_order : (store.products.length + 1),
-      is_bundle: isBundle,
-      is_active: prod ? prod.is_active : true,
-      description: desc,
-      needs_config: false,
-      cost_breakdown: prod ? (prod.cost_breakdown || []) : [],
-      cost_notes: prod ? (prod.cost_notes || '') : '',
-      display_stock: displayStock,
-      created_at: prod ? prod.created_at : timestamp,
-      updated_at: timestamp
-    };
-
-    await db.putItem('products', productRecord);
-    await store.refreshAll();
-    showToast(`Product "${name}" saved!`, 'success');
-    closeModal();
-  });
+  renderProductModal();
 }
 
-// 6. Cost Breakdown & Bulk Calculator Modal
+// 6. Cost Breakdown & Bulk Calculator Modal (Dedicated Update Modal)
 function openQuickCostModal(prod) {
   const container = document.getElementById('modal-container');
   if (!container) return;
@@ -8535,10 +8790,12 @@ function openQuickCostModal(prod) {
   let breakdown = Array.isArray(prod.cost_breakdown) && prod.cost_breakdown.length > 0 
     ? JSON.parse(JSON.stringify(prod.cost_breakdown)) 
     : [
-        { name: 'Main Product / Item', batch_cost: (prod.cost ? prod.cost * 1000 : 1500), batch_qty: 1000, unit_cost: prod.cost || 1.50, notes: 'Bulk factory order' },
-        { name: 'Packaging Bag', batch_cost: 25, batch_qty: 500, unit_cost: 0.05, notes: 'Wholesale 500 pcs/pack' },
-        { name: 'Backing Card / Sticker', batch_cost: 20, batch_qty: 1000, unit_cost: 0.02, notes: '1000 pcs roll' }
+        { name: 'Main Product / Item', batch_qty: 1000, batch_cost: (prod.cost ? prod.cost * 1000 : 1500), unit_cost: prod.cost || 1.50, notes: 'Bulk factory order' },
+        { name: 'Packaging Bag', batch_qty: 500, batch_cost: 25, unit_cost: 0.05, notes: 'Wholesale 500 pcs/pack' },
+        { name: 'Backing Card / Sticker', batch_qty: 1000, batch_cost: 20, unit_cost: 0.02, notes: '1000 pcs roll' }
       ];
+
+  const today = new Date().toISOString().split('T')[0];
 
   function renderModalContent() {
     container.innerHTML = `
@@ -8546,14 +8803,13 @@ function openQuickCostModal(prod) {
         <div class="modal-card" style="max-width:680px;width:95%;">
           <div class="modal-header">
             <div class="modal-title" style="display:flex;align-items:center;gap:6px;">
-              
               <span>Cost Breakdown &amp; Bulk Calculator — ${prod.name}</span>
             </div>
             <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
           </div>
           <div class="modal-body" style="max-height:75vh;overflow-y:auto;">
             <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:14px;font-size:0.82rem;color:var(--color-brown-dark);line-height:1.45;">
-              Designed for bulk batch purchasing (e.g. 100 or 1000 pcs). Enter total batch spend and quantity to calculate exact unit cost.
+              Designed for bulk batch purchasing (e.g. 100 or 1000 pcs). Enter total batch quantity and total spend to calculate exact unit cost.
             </div>
 
             <!-- Material & Packaging Items Container -->
@@ -8580,7 +8836,7 @@ function openQuickCostModal(prod) {
                       <div style="display:grid;grid-template-columns:1.8fr 1.2fr 1.2fr 1.2fr auto;gap:8px;align-items:center;">
                         <div>
                           <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Component Name</label>
-                          <input type="text" class="form-input cost-item-name" value="${item.name || ''}" placeholder="e.g. Coin body / Packaging bag / Sticker" style="padding:4px 6px;font-size:0.85rem;height:28px;">
+                          <input type="text" class="form-input cost-item-name" value="${item.name || ''}" placeholder="e.g. Body / Packaging / Sticker" style="padding:4px 6px;font-size:0.85rem;height:28px;">
                         </div>
                         <div>
                           <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Total Qty (pcs)</label>
@@ -8627,16 +8883,21 @@ function openQuickCostModal(prod) {
               </div>
             </div>
 
-            <!-- Unit Cost Input -->
+            <!-- Date and Unit Cost Input -->
             <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label" style="font-weight:700;">Update Date</label>
+                <input type="date" id="update-cost-date" class="form-input" value="${today}">
+              </div>
               <div class="form-group">
                 <label class="form-label" style="font-weight:700;">Final Unit Cost (RM)</label>
                 <input type="number" step="0.01" id="new-cost-input" class="form-input number-input" value="${prod.cost || 0}" style="font-size:1.15rem;font-weight:700;color:var(--color-brown-dark);">
               </div>
-              <div class="form-group">
-                <label class="form-label">Cost Update Reason</label>
-                <input type="text" id="cost-reason-input" class="form-input" placeholder="e.g. Bulk purchase cost breakdown update">
-              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Cost Update Reason</label>
+              <input type="text" id="cost-reason-input" class="form-input" placeholder="e.g. Bulk purchase cost breakdown update">
             </div>
 
             <div class="form-group">
@@ -8685,7 +8946,7 @@ function openQuickCostModal(prod) {
     // Add cost item row
     document.getElementById('btn-add-cost-item').addEventListener('click', () => {
       saveInputsToBreakdown();
-      breakdown.push({ name: '', batch_cost: 0, batch_qty: 1000, unit_cost: 0, notes: '' });
+      breakdown.push({ name: '', batch_qty: 1000, batch_cost: 0, unit_cost: 0, notes: '' });
       renderModalContent();
     });
 
@@ -8696,13 +8957,11 @@ function openQuickCostModal(prod) {
         const idx = parseInt(btn.getAttribute('data-idx'), 10);
         breakdown.splice(idx, 1);
         if (breakdown.length === 0) {
-          breakdown.push({ name: 'Component item', batch_cost: 0, batch_qty: 1000, unit_cost: 0, notes: '' });
+          breakdown.push({ name: 'Component item', batch_qty: 1000, batch_cost: 0, unit_cost: 0, notes: '' });
         }
         renderModalContent();
       });
     });
-
-
 
     // Real-time live recalculate on any cost or quantity keystroke
     container.querySelectorAll('.cost-item-cost, .cost-item-qty').forEach(input => {
@@ -8726,6 +8985,7 @@ function openQuickCostModal(prod) {
     document.getElementById('modal-cost-save-btn').addEventListener('click', async () => {
       saveInputsToBreakdown();
       const newCost = parseFloat(document.getElementById('new-cost-input').value) || 0;
+      const updateDate = document.getElementById('update-cost-date')?.value || today;
       const reason = document.getElementById('cost-reason-input').value.trim();
       const costNotes = document.getElementById('cost-notes-textarea').value.trim();
 
@@ -8736,7 +8996,7 @@ function openQuickCostModal(prod) {
           product.cost_notes = costNotes;
           await db.putItem('products', product);
         }
-        await updateProductCost(prod.id, newCost, reason || 'Bulk purchase cost breakdown update');
+        await updateProductCost(prod.id, newCost, reason || 'Bulk purchase cost breakdown update', updateDate);
         showToast('Cost breakdown and unit cost saved!', 'success');
         closeModal();
       } catch (err) {
@@ -8753,8 +9013,8 @@ function openQuickCostModal(prod) {
       const idx = parseInt(row.getAttribute('data-idx'), 10);
       if (breakdown[idx]) {
         breakdown[idx].name = row.querySelector('.cost-item-name')?.value || '';
-        breakdown[idx].batch_cost = parseFloat(row.querySelector('.cost-item-cost')?.value) || 0;
         breakdown[idx].batch_qty = parseFloat(row.querySelector('.cost-item-qty')?.value) || 1;
+        breakdown[idx].batch_cost = parseFloat(row.querySelector('.cost-item-cost')?.value) || 0;
         breakdown[idx].notes = row.querySelector('.cost-item-notes')?.value || '';
         const uCost = breakdown[idx].batch_qty > 0 ? (breakdown[idx].batch_cost / breakdown[idx].batch_qty) : 0;
         breakdown[idx].unit_cost = uCost;
