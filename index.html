@@ -73,6 +73,13 @@ body, button, input, select, textarea {
   font-family: var(--font-family-base);
 }
 
+html {
+  overflow-x: hidden;
+  max-width: 100vw;
+  width: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   background-color: var(--bg-primary);
   color: var(--text-main);
@@ -82,6 +89,18 @@ body {
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
   overflow-x: hidden;
+  width: 100%;
+  max-width: 100vw;
+  touch-action: pan-y pinch-zoom;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin-anim {
+  animation: spin 0.6s linear infinite !important;
+  display: inline-block;
 }
 
 #app {
@@ -428,6 +447,12 @@ h1.page-title {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+.form-textarea {
+  resize: vertical;
+  min-height: 64px;
+  line-height: 1.45;
+}
+
 .form-input:focus, .form-select:focus, .form-textarea:focus {
   border-color: var(--color-brown);
   box-shadow: 0 0 0 3px rgba(147, 102, 83, 0.15);
@@ -735,17 +760,159 @@ h1.page-title {
   }
 }
 
-@media (max-width: 1024px) {
+/* =========================================================
+   TABLET & IPAD (769px - 1024px)
+   Compact Rail Sidebar + Rock-solid Fixed Viewport (Zero Shifts)
+   ========================================================= */
+@media (min-width: 769px) and (max-width: 1024px) {
+  :root {
+    --sidebar-tablet-width: 76px;
+  }
+
+  /* Global viewport lock - prevent any iPad bounce or horizontal drift */
+  html, body {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+    width: 100% !important;
+    overscroll-behavior-x: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  #app, .app-layout {
+    max-width: 100vw !important;
+    width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Compact rail sidebar for iPad */
+  .sidebar {
+    width: var(--sidebar-tablet-width) !important;
+    padding: 10px 4px !important;
+    box-sizing: border-box !important;
+  }
+
+  .sidebar .brand-title-wrap,
+  .sidebar .brand-subtitle,
+  .sidebar .sidebar-footer {
+    display: none !important;
+  }
+
+  .sidebar-header {
+    padding: 6px 2px 10px 2px !important;
+    margin-bottom: 8px !important;
+    justify-content: center !important;
+    align-items: center !important;
+    border-bottom: 1px solid var(--border-light) !important;
+  }
+
+  .brand-logo-img {
+    height: 32px !important;
+    width: auto !important;
+    margin: 0 auto !important;
+  }
+
+  .btn-sidebar-refresh {
+    display: none !important;
+  }
+
+  .sidebar-nav {
+    gap: 4px !important;
+    padding: 0 2px !important;
+  }
+
+  .nav-item {
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 8px 3px !important;
+    gap: 3px !important;
+    text-align: center !important;
+    border-radius: var(--radius-sm) !important;
+  }
+
+  .nav-item span {
+    font-size: 0.65rem !important;
+    line-height: 1.15 !important;
+    font-weight: 700 !important;
+    white-space: normal !important;
+    text-align: center !important;
+    max-width: 68px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+  }
+
+  .nav-item svg {
+    width: 20px !important;
+    height: 20px !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Main content wrapper on iPad */
+  .main-wrapper {
+    margin-left: var(--sidebar-tablet-width) !important;
+    width: calc(100vw - var(--sidebar-tablet-width)) !important;
+    max-width: calc(100vw - var(--sidebar-tablet-width)) !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+
+  .main-content {
+    padding: 16px 18px 24px 18px !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  /* POS layout on iPad */
   .pos-layout {
-    grid-template-columns: 1fr 360px;
+    grid-template-columns: 1fr 310px !important;
+    gap: 14px !important;
+    height: calc(100vh - 84px) !important;
+    min-width: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .pos-product-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
+    gap: 10px !important;
+    padding: 2px 2px 14px 2px !important;
+  }
+
+  .product-tap-card {
+    padding: 10px !important;
+    min-height: 110px !important;
+  }
+
+  .pos-cart-panel {
+    width: 310px !important;
+    min-width: 310px !important;
+  }
+
+  /* Critical: Prevent iOS Safari auto-zoom on inputs on iPad */
+  .form-input, .form-select, .form-textarea {
+    font-size: 16px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Table containment on iPad */
+  .table-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
   }
 }
 
 /* ---- MOBILE (≤ 768px) ---- */
 @media (max-width: 768px) {
   :root {
-    --bottom-nav-height: 68px;
-    --header-height: 54px;
+    --bottom-nav-height: calc(62px + env(safe-area-inset-bottom, 0px));
+    --header-height: calc(52px + env(safe-area-inset-top, 0px));
   }
 
   /* Global viewport lock - NO horizontal scroll anywhere */
@@ -753,6 +920,8 @@ h1.page-title {
     overflow-x: hidden !important;
     max-width: 100vw !important;
     width: 100% !important;
+    overscroll-behavior-y: none;
+    -webkit-text-size-adjust: 100%;
   }
 
   #app {
@@ -762,17 +931,17 @@ h1.page-title {
   }
 
   /* Hide desktop sidebar, show mobile chrome */
-  .sidebar { display: none; }
-  .top-header { display: flex; }
-  .bottom-nav { display: flex; }
+  .sidebar { display: none !important; }
+  .top-header { display: flex !important; }
+  .bottom-nav { display: flex !important; }
 
   .main-wrapper {
-    margin-left: 0;
+    margin-left: 0 !important;
     min-width: 0 !important;
     max-width: 100vw !important;
     width: 100% !important;
     overflow-x: hidden !important;
-    padding-bottom: calc(var(--bottom-nav-height) + 16px);
+    padding-bottom: calc(var(--bottom-nav-height) + 20px) !important;
   }
 
   .main-content {
@@ -988,7 +1157,7 @@ h1.page-title {
   .pos-floating-cart-bar {
     display: flex;
     position: fixed;
-    bottom: calc(var(--bottom-nav-height) + 10px);
+    bottom: calc(var(--bottom-nav-height) + 8px);
     left: 12px;
     right: 12px;
     background: var(--color-brown-dark);
@@ -3884,12 +4053,21 @@ function renderSidebar(currentView) {
   return `
     <aside class="sidebar">
       <div class="sidebar-header">
-        <img src="Muki.png" alt="Muki Logo" class="brand-logo-img" onerror="this.style.display='none'">
-        <div class="brand-title">
-          <span>MUKI</span>
-          <span class="brand-badge">POS</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <img src="Muki.png" alt="Muki Logo" class="brand-logo-img" onerror="this.style.display='none'">
+            <div class="brand-title-wrap">
+              <div class="brand-title">
+                <span>MUKI</span>
+                <span class="brand-badge">POS</span>
+              </div>
+              <div class="brand-subtitle">Stall Sales &amp; Inventory</div>
+            </div>
+          </div>
+          <button type="button" class="btn-sidebar-refresh" data-action="app-refresh" title="Refresh Application Data" style="background:var(--bg-secondary);border:1px solid var(--border-light);color:var(--color-brown);cursor:pointer;padding:6px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;transition:all 0.15s ease;">
+            ${renderIcon('refresh', 16)}
+          </button>
         </div>
-        <div class="brand-subtitle">Stall Sales & Inventory</div>
       </div>
       <nav class="sidebar-nav">
         ${navLinks}
@@ -3899,7 +4077,11 @@ function renderSidebar(currentView) {
           <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#15803D;"></span>
           <span style="font-weight:600;color:var(--text-main);">IndexedDB Ready</span>
         </div>
-        <div>Offline & Local Storage</div>
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:8px;">Offline &amp; Local Storage</div>
+        <button type="button" class="btn btn-sm btn-secondary" data-action="app-refresh" style="width:100%;justify-content:center;font-weight:700;font-size:0.78rem;padding:6px 8px;gap:6px;">
+          ${renderIcon('refresh', 13)}
+          <span>Refresh Data</span>
+        </button>
       </div>
     </aside>
   `;
@@ -3907,48 +4089,65 @@ function renderSidebar(currentView) {
 
 function renderTopHeader(currentView) {
   const currentItem = NAV_ITEMS.find(i => i.id === currentView) || NAV_ITEMS[0];
+  const isMoreSubPage = ['promotions', 'expenses', 'inventory', 'products', 'backup'].includes(currentView);
+
   return `
     <header class="top-header">
-      <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-        <img src="Muki.png" alt="Muki" style="height:32px;width:auto;object-fit:contain;flex-shrink:0;" onerror="this.style.display='none'">
+      <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+        ${isMoreSubPage ? `
+          <button type="button" class="btn btn-sm btn-secondary" data-action="switch-view" data-target="more" style="padding:5px 8px;font-size:0.75rem;border-radius:14px;display:flex;align-items:center;gap:3px;flex-shrink:0;font-weight:700;">
+            ${renderIcon('chevronLeft', 14)}
+            <span>Menu</span>
+          </button>
+        ` : `
+          <img src="Muki.png" alt="Muki" style="height:30px;width:auto;object-fit:contain;flex-shrink:0;" onerror="this.style.display='none'">
+        `}
         <div style="display:flex;flex-direction:column;min-width:0;">
-          <span style="font-weight:800;font-size:0.95rem;letter-spacing:-0.01em;line-height:1.1;white-space:nowrap;color:var(--color-brown-dark);">MUKI POS</span>
-          <span style="font-size:0.72rem;color:var(--text-muted);font-weight:600;white-space:nowrap;">${currentItem.label}</span>
+          <span style="font-weight:800;font-size:0.92rem;letter-spacing:-0.01em;line-height:1.1;white-space:nowrap;color:var(--color-brown-dark);overflow:hidden;text-overflow:ellipsis;">
+            ${currentItem.label}
+          </span>
+          <span style="font-size:0.68rem;color:var(--text-muted);font-weight:600;white-space:nowrap;">Muki Stall POS</span>
         </div>
       </div>
-      <div style="display:flex;gap:7px;flex-shrink:0;">
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+        <button type="button" class="btn btn-sm btn-secondary" data-action="app-refresh" title="Refresh Application Data" style="padding:5px 9px;display:flex;align-items:center;gap:4px;font-weight:700;font-size:0.78rem;">
+          ${renderIcon('refresh', 14)}
+          <span>Refresh</span>
+        </button>
         ${store.settings?.github_token ? `
-          <button type="button" class="btn btn-sm btn-secondary" data-action="quick-github-upload" title="Sync &amp; Upload to GitHub" style="padding:5px 10px;">
-            ${renderIcon('upload', 15)}
-            <span>Sync</span>
+          <button type="button" class="btn btn-sm btn-secondary" data-action="quick-github-upload" title="Sync &amp; Upload to GitHub" style="padding:5px 9px;">
+            ${renderIcon('upload', 14)}
           </button>
         ` : ''}
-        <button type="button" class="btn btn-sm btn-primary" data-action="quick-pos" style="padding:5px 12px;">
-          ${renderIcon('pos', 15)}
-          <span>POS</span>
-        </button>
+        ${currentView !== 'pos' ? `
+          <button type="button" class="btn btn-sm btn-primary" data-action="quick-pos" style="padding:5px 12px;font-weight:700;">
+            ${renderIcon('pos', 14)}
+            <span>POS</span>
+          </button>
+        ` : ''}
       </div>
     </header>
   `;
 }
 
 function renderBottomNav(currentView) {
+  const isMoreSubPage = ['promotions', 'expenses', 'inventory', 'products', 'backup'].includes(currentView);
   const mobileItems = [
-    { id: 'pos', label: 'POS', icon: 'pos' },
-    { id: 'dashboard', label: 'Overview', icon: 'dashboard' },
-    { id: 'dailyRecords', label: 'Daily', icon: 'dailyRecords' },
-    { id: 'salesReports', label: 'Reports', icon: 'report' },
-    { id: 'more', label: 'More', icon: 'products' }
+    { id: 'pos', label: 'POS', icon: 'pos', isActive: currentView === 'pos' },
+    { id: 'dashboard', label: 'Overview', icon: 'dashboard', isActive: currentView === 'dashboard' },
+    { id: 'dailyRecords', label: 'Daily', icon: 'dailyRecords', isActive: currentView === 'dailyRecords' },
+    { id: 'salesReports', label: 'Reports', icon: 'report', isActive: currentView === 'salesReports' },
+    { id: 'more', label: 'More', icon: 'products', isActive: currentView === 'more' || isMoreSubPage }
   ];
 
   return `
     <nav class="bottom-nav">
       ${mobileItems.map(item => `
         <button type="button" 
-          class="bottom-nav-item ${currentView === item.id ? 'active' : ''}" 
+          class="bottom-nav-item ${item.isActive ? 'active' : ''}" 
           data-view="${item.id}"
           style="background:none;border:none;cursor:pointer;">
-          ${renderIcon(item.icon, 22)}
+          ${renderIcon(item.icon, 20)}
           <span>${item.label}</span>
         </button>
       `).join('')}
@@ -4559,12 +4758,12 @@ function renderPos() {
             <!-- Optional Description for "Other" payment method -->
             ${selectedPaymentMethod === 'Other' ? `
               <div style="margin-top:8px;">
-                <input type="text" 
+                <textarea 
                   id="pos-other-payment-input" 
-                  class="form-input" 
+                  class="form-textarea" 
+                  rows="2"
                   placeholder="Payment note (e.g. Bank transfer, GrabPay...)" 
-                  value="${otherPaymentNote}" 
-                  style="font-size:0.82rem;padding:5px 8px;background:#fff;border-color:var(--color-orange);">
+                  style="font-size:0.82rem;padding:6px 8px;background:#fff;border-color:var(--color-orange);width:100%;resize:vertical;">${otherPaymentNote}</textarea>
               </div>
             ` : ''}
           </div>
@@ -6021,7 +6220,7 @@ function renderExpenses() {
                     <td data-label="Amount" class="num" style="text-align:right;font-weight:700;font-size:1.05rem;color:var(--color-brown);">
                       ${formatRM(exp.amount)}
                     </td>
-                    <td data-label="Notes" style="font-size:0.82rem;color:var(--text-muted);">
+                    <td data-label="Notes" style="font-size:0.82rem;color:var(--text-muted);white-space:pre-wrap;word-break:break-word;">
                       ${exp.notes || '-'}
                     </td>
                     <td data-label="Actions" class="td-actions">
@@ -6674,6 +6873,24 @@ function attachEventListeners() {
   if (quickPosBtn) {
     quickPosBtn.addEventListener('click', () => navigateTo('pos'));
   }
+
+  // App Refresh handler (Desktop, iPad, Mobile)
+  appRoot.querySelectorAll('[data-action="app-refresh"]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const icon = btn.querySelector('svg');
+      if (icon) icon.classList.add('spin-anim');
+      try {
+        await store.refreshAll();
+        renderApp();
+        showToast('Data refreshed', 'success');
+      } catch (err) {
+        showToast('Refresh failed: ' + err.message, 'danger');
+      } finally {
+        if (icon) icon.classList.remove('spin-anim');
+      }
+    });
+  });
 
   // --- POS Interactions ---
   // Mobile tab switcher: Products vs Cart
@@ -7391,6 +7608,11 @@ function openOrderReceiptModal(order) {
               <span>TOTAL PAID:</span>
               <span style="font-family:var(--font-mono);">${formatRM(order.final_amount)}</span>
             </div>
+            ${order.payment_notes ? `
+              <div style="font-size:0.75rem;color:var(--text-muted);border-top:1px dashed var(--border-light);padding-top:6px;margin-top:6px;white-space:pre-wrap;word-break:break-word;">
+                <strong>Note:</strong> ${order.payment_notes}
+              </div>
+            ` : ''}
 
             <div style="text-align:center;margin-top:16px;font-size:0.75rem;color:var(--text-muted);">
               Thank you for supporting Muki!
@@ -7519,6 +7741,12 @@ function openOrderInspectModal(order) {
               <span>Estimated Gross Profit:</span>
               <span class="num">${formatRM(order.gross_profit)}</span>
             </div>
+            ${order.payment_notes ? `
+              <div style="display:flex;justify-content:space-between;padding-top:6px;border-top:1px dashed var(--border-light);align-items:flex-start;">
+                <span style="color:var(--text-muted);">Notes:</span>
+                <span style="font-weight:600;white-space:pre-wrap;word-break:break-word;text-align:right;max-width:65%;">${order.payment_notes}</span>
+              </div>
+            ` : ''}
           </div>
         </div>
         <div class="modal-footer" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -7668,7 +7896,7 @@ function openStockAdjustModal(preselectedProductId = '') {
 
           <div class="form-group">
             <label class="form-label">Notes (Optional)</label>
-            <input type="text" id="adjust-notes-input" class="form-input" placeholder="e.g. Production defect / machine damage / replenishment">
+            <textarea id="adjust-notes-input" class="form-textarea" rows="2" placeholder="e.g. Production defect / machine damage / replenishment"></textarea>
           </div>
         </div>
         <div class="modal-footer">
@@ -7805,8 +8033,8 @@ function openRecordDefectModal(preselectedProductId = '') {
           </div>
 
           <div class="form-group">
-            <label class="form-label">Defect Description / Notes</label>
-            <input type="text" id="defect-notes-input" class="form-input" placeholder="e.g. Scratched surface / print defect">
+            <label class="form-label">Defect Description / Notes (Optional)</label>
+            <textarea id="defect-notes-input" class="form-textarea" rows="2" placeholder="e.g. Scratched surface / print defect"></textarea>
           </div>
         </div>
         <div class="modal-footer">
@@ -8120,8 +8348,8 @@ function openProductModal(prod = null) {
           </div>
 
           <div class="form-group">
-            <label class="form-label">Description (Optional)</label>
-            <input type="text" id="prod-desc-input" class="form-input" value="${prod?.description || ''}" placeholder="Short notes">
+            <label class="form-label">Description / Notes (Optional)</label>
+            <textarea id="prod-desc-input" class="form-textarea" rows="2" placeholder="Optional notes or details">${prod?.description || ''}</textarea>
           </div>
         </div>
         <div class="modal-footer">
@@ -8527,7 +8755,7 @@ function openExpenseModal(exp = null) {
 
           <div class="form-group">
             <label class="form-label">Notes (Optional)</label>
-            <input type="text" id="exp-notes-input" class="form-input" value="${exp?.notes || ''}" placeholder="Optional details (e.g. Weekend market booth #12)">
+            <textarea id="exp-notes-input" class="form-textarea" rows="3" placeholder="Optional details (e.g. Weekend market booth #12, petrol receipts, etc.)">${exp?.notes || ''}</textarea>
           </div>
         </div>
         <div class="modal-footer">
@@ -9210,7 +9438,7 @@ function openManageDisplayModal(preselectedProductId = '') {
               </div>
               <div class="form-group">
                 <label class="form-label">Notes (Optional)</label>
-                <input type="text" id="display-notes-input" class="form-input" placeholder="e.g. Market table display">
+                <textarea id="display-notes-input" class="form-textarea" rows="2" placeholder="e.g. Market table display"></textarea>
               </div>
             </div>
 
@@ -9575,8 +9803,8 @@ function openEditOrderModal(order) {
                 <input type="number" step="0.50" min="0" id="edit-order-discount" class="form-input number-input" value="${discount}">
               </div>
               <div class="form-group">
-                <label class="form-label">Payment / Receipt Notes</label>
-                <input type="text" id="edit-order-notes" class="form-input" value="${paymentNotes}" placeholder="e.g. Paid via TnG eWallet">
+                <label class="form-label">Payment / Receipt Notes (Optional)</label>
+                <textarea id="edit-order-notes" class="form-textarea" rows="2" placeholder="e.g. Paid via TnG eWallet, customer notes...">${paymentNotes}</textarea>
               </div>
             </div>
 
