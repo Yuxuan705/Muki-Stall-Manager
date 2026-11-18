@@ -2132,7 +2132,7 @@ class AppStore {
    * Calculate the live cost of a product:
    * - If it has a recipe, can compute sum of component costs or use set cost.
    */
-  getComputedCost(productId) {
+  getComputedCost(productId, quantity = 1) {
     const prod = this.products.find(p => p.id === productId);
     if (!prod) return 0;
 
@@ -2141,13 +2141,80 @@ class AppStore {
       let sumCost = 0;
       for (const r of recipes) {
         const comp = this.products.find(p => p.id === r.component_product_id);
-        const compCost = comp ? (Number(comp.cost) || 0) : 0;
+        const compCost = comp ? this.getComputedCost(comp.id, (Number(r.quantity) || 1) * quantity) : 0;
         sumCost += compCost * (Number(r.quantity) || 1);
       }
       return round(sumCost);
     }
 
+    // Single physical product: evaluate against FIFO batches
+    if (Array.isArray(prod.cost_batches) && prod.cost_batches.length > 0) {
+      let needed = Math.max(1, Number(quantity) || 1);
+      let costSum = 0;
+      for (const b of prod.cost_batches) {
+        const bRem = Number(b.remaining_qty) || 0;
+        if (bRem > 0) {
+          const take = Math.min(needed, bRem);
+          costSum += take * (Number(b.unit_cost) || 0);
+          needed -= take;
+          if (needed <= 0) break;
+        }
+      }
+      if (needed > 0) {
+        costSum += needed * (Number(prod.cost) || 0);
+      }
+      return round(costSum / Math.max(1, Number(quantity) || 1));
+    }
+
     return Number(prod.cost) || 0;
+  }
+
+  /**
+   * Calculate total valuation of inventory at cost (Total Inventory Investment / Stock Value):
+   */
+  getTotalInventoryCost() {
+    let totalCost = 0;
+    for (const p of this.products) {
+      if (this.isBundleProduct(p.id)) continue;
+      if (Array.isArray(p.cost_batches) && p.cost_batches.length > 0) {
+        for (const b of p.cost_batches) {
+          const rem = Math.max(0, Number(b.remaining_qty) || 0);
+          const uCost = Number(b.unit_cost) || 0;
+          totalCost += rem * uCost;
+        }
+      } else {
+        const stock = Math.max(0, Number(p.stock) || 0);
+        const cost = Number(p.cost) || 0;
+        totalCost += stock * cost;
+      }
+    }
+    return round(totalCost);
+  }
+
+  /**
+   * Calculate total potential retail valuation of physical inventory:
+   */
+  getTotalInventoryRetailValue() {
+    let totalRetail = 0;
+    for (const p of this.products) {
+      if (this.isBundleProduct(p.id)) continue;
+      const stock = Math.max(0, Number(p.stock) || 0);
+      const price = Number(p.selling_price) || 0;
+      totalRetail += stock * price;
+    }
+    return round(totalRetail);
+  }
+
+  /**
+   * Total physical sellable pieces across non-bundle products:
+   */
+  getTotalPhysicalStock() {
+    let totalUnits = 0;
+    for (const p of this.products) {
+      if (this.isBundleProduct(p.id)) continue;
+      totalUnits += Math.max(0, Number(p.stock) || 0);
+    }
+    return totalUnits;
   }
 
   // --- Categories Management ---
@@ -2513,7 +2580,7 @@ async function deductStockForOrder(items, orderId, orderNumber) {
     }
   }
 
-  // Apply all deductions in database and log movements
+  // Apply all deductions in database and log movements with FIFO batch deduction
   for (const ded of deductions) {
     const product = await db.getById('products', ded.productId);
     if (!product) continue;
@@ -2522,6 +2589,38 @@ async function deductStockForOrder(items, orderId, orderNumber) {
     const newStock = previousStock + ded.delta; // delta is negative
     product.stock = newStock;
     product.updated_at = timestamp;
+
+    // Deduct from FIFO batches if product has batches or initialize batches
+    let batches = Array.isArray(product.cost_batches) && product.cost_batches.length > 0
+      ? product.cost_batches
+      : [{
+          id: 'batch_init_' + product.id,
+          date: product.date || timestamp.split('T')[0],
+          initial_qty: previousStock,
+          remaining_qty: previousStock,
+          unit_cost: Number(product.cost) || 0,
+          cost_breakdown: Array.isArray(product.cost_breakdown) ? product.cost_breakdown : [],
+          notes: 'Initial inventory batch'
+        }];
+
+    let qtyToDeduct = Math.abs(ded.delta);
+    for (const batch of batches) {
+      const bRem = Number(batch.remaining_qty) || 0;
+      if (bRem > 0) {
+        const take = Math.min(qtyToDeduct, bRem);
+        batch.remaining_qty = bRem - take;
+        qtyToDeduct -= take;
+        if (qtyToDeduct <= 0) break;
+      }
+    }
+
+    product.cost_batches = batches;
+
+    // Update active unit cost to the currently active FIFO batch (first batch with remaining_qty > 0)
+    const activeBatch = batches.find(b => (Number(b.remaining_qty) || 0) > 0);
+    if (activeBatch) {
+      product.cost = Number(activeBatch.unit_cost) || 0;
+    }
 
     await db.putItem('products', product);
 
@@ -5890,6 +5989,45 @@ function renderInventory() {
         </div>
       </div>
 
+      <!-- Total Inventory Valuation KPI Cards -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));gap:12px;margin-bottom:20px;">
+        <div class="card" style="padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border-light);border-left:4px solid var(--color-brown);">
+          <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">
+            Total Inventory Cost (Stock Value)
+          </div>
+          <div style="font-size:1.45rem;font-weight:800;font-family:var(--font-mono);color:var(--color-brown);">
+            ${formatRM(store.getTotalInventoryCost())}
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">
+            Total capital invested in current stock to tally with cash/bank accounts
+          </div>
+        </div>
+
+        <div class="card" style="padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border-light);">
+          <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">
+            Total Physical Stock
+          </div>
+          <div style="font-size:1.45rem;font-weight:800;font-family:var(--font-mono);color:var(--color-brown-dark);">
+            ${store.getTotalPhysicalStock()} <span style="font-size:0.85rem;font-weight:600;color:var(--text-muted);">pcs</span>
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">
+            Total physical sellable units on hand
+          </div>
+        </div>
+
+        <div class="card" style="padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border-light);">
+          <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">
+            Potential Retail Value
+          </div>
+          <div style="font-size:1.45rem;font-weight:800;font-family:var(--font-mono);color:var(--text-main);">
+            ${formatRM(store.getTotalInventoryRetailValue())}
+          </div>
+          <div style="font-size:0.72rem;color:var(--color-brown);font-weight:600;margin-top:2px;">
+            Potential Gross Profit: ${formatRM(store.getTotalInventoryRetailValue() - store.getTotalInventoryCost())}
+          </div>
+        </div>
+      </div>
+
       <!-- Tab Navigation -->
       <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid var(--border-light);padding-bottom:10px;">
         <button type="button" 
@@ -6383,6 +6521,45 @@ function renderProducts() {
         </div>
       </div>
 
+      <!-- Total Inventory Valuation KPI Cards -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));gap:12px;margin-bottom:20px;">
+        <div class="card" style="padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border-light);border-left:4px solid var(--color-brown);">
+          <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">
+            Total Inventory Cost (Stock Value)
+          </div>
+          <div style="font-size:1.45rem;font-weight:800;font-family:var(--font-mono);color:var(--color-brown);">
+            ${formatRM(store.getTotalInventoryCost())}
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">
+            Total capital invested in remaining stock to tally with cash/bank
+          </div>
+        </div>
+
+        <div class="card" style="padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border-light);">
+          <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">
+            Total Physical Stock
+          </div>
+          <div style="font-size:1.45rem;font-weight:800;font-family:var(--font-mono);color:var(--color-brown-dark);">
+            ${store.getTotalPhysicalStock()} <span style="font-size:0.85rem;font-weight:600;color:var(--text-muted);">pcs</span>
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">
+            Total physical merchandise across all single items
+          </div>
+        </div>
+
+        <div class="card" style="padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border-light);">
+          <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">
+            Potential Retail Value
+          </div>
+          <div style="font-size:1.45rem;font-weight:800;font-family:var(--font-mono);color:var(--text-main);">
+            ${formatRM(store.getTotalInventoryRetailValue())}
+          </div>
+          <div style="font-size:0.72rem;color:var(--color-brown);font-weight:600;margin-top:2px;">
+            Potential Profit: ${formatRM(store.getTotalInventoryRetailValue() - store.getTotalInventoryCost())}
+          </div>
+        </div>
+      </div>
+
       <!-- Tab navigation -->
       <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid var(--border-light);padding-bottom:10px;">
         <button type="button" 
@@ -6505,18 +6682,31 @@ function renderProductList(products) {
                       : `<span class="badge badge-cancelled">Disabled</span>`}
                   </td>
                   <td data-label="Actions" class="td-actions" style="text-align:right;white-space:nowrap;">
-                    <button type="button" class="btn btn-sm btn-secondary" data-action="quick-edit-cost" data-product-id="${p.id}" title="Update Unit Cost & Bulk Breakdown">
-                      Update Cost
-                    </button>
-                    <button type="button" class="btn btn-sm btn-secondary" data-action="edit-product" data-product-id="${p.id}">
-                      Edit
-                    </button>
-                    <button type="button" class="btn btn-sm btn-secondary" data-action="toggle-product-active" data-product-id="${p.id}">
-                      ${p.is_active !== false ? 'Disable' : 'Enable'}
-                    </button>
-                    <button type="button" class="btn btn-sm btn-secondary" style="color:var(--color-danger);" data-action="delete-product" data-product-id="${p.id}" title="Delete Product">
-                      Delete
-                    </button>
+                    <div class="actions-dropdown-wrap" style="position:relative;display:inline-block;">
+                      <button type="button" class="btn btn-sm btn-secondary btn-actions-dropdown-toggle" data-action="toggle-product-menu" data-product-id="${p.id}" style="font-weight:700;padding:4px 10px;display:inline-flex;align-items:center;gap:4px;">
+                        <span>Actions</span>
+                        <span style="font-size:0.65rem;">▼</span>
+                      </button>
+                      <div class="actions-menu-popover" id="actions-menu-${p.id}" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-sm);box-shadow:0 6px 18px rgba(0,0,0,0.12);z-index:99;min-width:170px;text-align:left;overflow:hidden;">
+                        <button type="button" class="dropdown-item-btn" data-action="quick-edit-cost" data-product-id="${p.id}" style="width:100%;text-align:left;padding:8px 12px;background:none;border:none;cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--text-main);display:flex;align-items:center;gap:8px;">
+                          ${renderIcon('expenses', 14)}
+                          <span>Update Cost</span>
+                        </button>
+                        <button type="button" class="dropdown-item-btn" data-action="edit-product" data-product-id="${p.id}" style="width:100%;text-align:left;padding:8px 12px;background:none;border:none;cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--text-main);display:flex;align-items:center;gap:8px;">
+                          ${renderIcon('edit', 14)}
+                          <span>Edit</span>
+                        </button>
+                        <button type="button" class="dropdown-item-btn" data-action="toggle-product-active" data-product-id="${p.id}" style="width:100%;text-align:left;padding:8px 12px;background:none;border:none;cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--text-main);display:flex;align-items:center;gap:8px;">
+                          ${renderIcon('chevronRight', 14)}
+                          <span>${p.is_active !== false ? 'Disable' : 'Enable'}</span>
+                        </button>
+                        <div style="border-top:1px solid var(--border-light);margin:2px 0;"></div>
+                        <button type="button" class="dropdown-item-btn" data-action="delete-product" data-product-id="${p.id}" style="width:100%;text-align:left;padding:8px 12px;background:none;border:none;cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--color-danger);display:flex;align-items:center;gap:8px;">
+                          ${renderIcon('trash', 14)}
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               `;
@@ -7354,6 +7544,31 @@ function attachEventListeners() {
       const prod = await db.getById('products', id);
       if (prod) openQuickCostModal(prod);
     });
+  });
+
+  // Actions Dropdown Menu Popover Handlers
+  appRoot.querySelectorAll('[data-action="toggle-product-menu"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const prodId = btn.getAttribute('data-product-id');
+      const targetMenu = document.getElementById(`actions-menu-${prodId}`);
+      // Close all other open popovers
+      document.querySelectorAll('.actions-menu-popover').forEach(m => {
+        if (m !== targetMenu) m.style.display = 'none';
+      });
+      if (targetMenu) {
+        targetMenu.style.display = targetMenu.style.display === 'none' ? 'block' : 'none';
+      }
+    });
+  });
+
+  // Global click anywhere closes open actions menus
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.actions-dropdown-wrap')) {
+      document.querySelectorAll('.actions-menu-popover').forEach(m => {
+        m.style.display = 'none';
+      });
+    }
   });
 
   appRoot.querySelectorAll('[data-action="toggle-product-active"]').forEach(btn => {
@@ -8512,12 +8727,20 @@ function openProductModal(prod = null) {
                 <input type="text" id="prod-name-input" class="form-input" value="${prod?.name || ''}" placeholder="e.g. Clicker / Sticker / Keychain">
               </div>
               <div class="form-group">
-                <label class="form-label">Is Bundle Set?</label>
-                <select id="prod-bundle-select" class="form-select">
-                  <option value="false" ${!prod?.is_bundle ? 'selected' : ''}>Single Physical Item</option>
-                  <option value="true" ${prod?.is_bundle ? 'selected' : ''}>Bundle (Uses Recipe)</option>
+                <label class="form-label">Product Status</label>
+                <select id="prod-status-select" class="form-select">
+                  <option value="true" ${prod?.is_active !== false ? 'selected' : ''}>Active (Available in POS)</option>
+                  <option value="false" ${prod?.is_active === false ? 'selected' : ''}>Disabled (Hidden from POS)</option>
                 </select>
               </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Is Bundle Set?</label>
+              <select id="prod-bundle-select" class="form-select">
+                <option value="false" ${!prod?.is_bundle ? 'selected' : ''}>Single Physical Item</option>
+                <option value="true" ${prod?.is_bundle ? 'selected' : ''}>Bundle (Uses Recipe)</option>
+              </select>
             </div>
 
             <!-- Selling Price & Tiered Volume Pricing -->
@@ -8853,7 +9076,7 @@ function openProductModal(prod = null) {
         stock,
         sort_order: (prod && typeof prod.sort_order === 'number') ? prod.sort_order : (store.products.length + 1),
         is_bundle: isBundle,
-        is_active: prod ? prod.is_active : true,
+        is_active: document.getElementById('prod-status-select')?.value === 'false' ? false : true,
         description: desc,
         needs_config: false,
         pricing_tiers: validTiers,
@@ -8907,297 +9130,549 @@ function openProductModal(prod = null) {
   renderProductModal();
 }
 
-// 6. Cost Breakdown & Bulk Calculator Modal (Dedicated Update Modal with History)
+// 6. Cost Breakdown & FIFO Batch Management Modal
 function openQuickCostModal(prod) {
   const container = document.getElementById('modal-container');
   if (!container) return;
 
-  // Clone or initialize breakdown items
-  let breakdown = Array.isArray(prod.cost_breakdown) && prod.cost_breakdown.length > 0 
-    ? JSON.parse(JSON.stringify(prod.cost_breakdown)) 
-    : [
-        { name: 'Main Product / Item', batch_qty: 1000, batch_cost: (prod.cost ? prod.cost * 1000 : 1500), unit_cost: prod.cost || 1.50, notes: 'Bulk factory order' },
-        { name: 'Packaging Bag', batch_qty: 500, batch_cost: 25, unit_cost: 0.05, notes: 'Wholesale 500 pcs/pack' },
-        { name: 'Backing Card / Sticker', batch_qty: 1000, batch_cost: 20, unit_cost: 0.02, notes: '1000 pcs roll' }
-      ];
-
   const today = new Date().toISOString().split('T')[0];
 
+  // Initialize FIFO batches for this product if not already present
+  let batches = Array.isArray(prod.cost_batches) && prod.cost_batches.length > 0
+    ? JSON.parse(JSON.stringify(prod.cost_batches))
+    : [{
+        id: 'batch_init_' + prod.id,
+        date: prod.date || today,
+        initial_qty: Number(prod.stock) || 0,
+        remaining_qty: Number(prod.stock) || 0,
+        unit_cost: Number(prod.cost) || 0,
+        cost_breakdown: Array.isArray(prod.cost_breakdown) ? JSON.parse(JSON.stringify(prod.cost_breakdown)) : [],
+        notes: 'Initial inventory batch'
+      }];
+
+  // New inward batch breakdown components state
+  let newBatchBreakdown = [
+    { name: 'Main Product / Item', batch_qty: 1000, batch_cost: (prod.cost ? prod.cost * 1000 : 1500), unit_cost: prod.cost || 1.50, notes: 'Bulk factory invoice' },
+    { name: 'Packaging Bag', batch_qty: 500, batch_cost: 25, unit_cost: 0.05, notes: 'Wholesale 500 pcs/pack' }
+  ];
+
+  let editingBatchId = null; // Track batch currently being edited inline
+
   function renderModalContent() {
+    // Calculate FIFO queue totals
+    const totalRemaining = batches.reduce((sum, b) => sum + Math.max(0, Number(b.remaining_qty) || 0), 0);
+    const activeBatch = batches.find(b => (Number(b.remaining_qty) || 0) > 0) || batches[0];
+    const activeCost = activeBatch ? (Number(activeBatch.unit_cost) || 0) : (Number(prod.cost) || 0);
+    const totalBatchVal = batches.reduce((sum, b) => sum + (Math.max(0, Number(b.remaining_qty) || 0) * (Number(b.unit_cost) || 0)), 0);
+
     const productHistory = (store.costHistory || [])
       .filter(h => h.product_id === prod.id)
       .sort((a, b) => new Date(b.date || b.timestamp) - new Date(a.date || a.timestamp));
 
     container.innerHTML = `
       <div class="modal-overlay">
-        <div class="modal-card" style="max-width:700px;width:95%;max-height:88vh;display:flex;flex-direction:column;">
+        <div class="modal-card" style="max-width:760px;width:95%;max-height:88vh;display:flex;flex-direction:column;">
           <div class="modal-header">
             <div class="modal-title" style="display:flex;align-items:center;gap:6px;">
-              <span>Cost Breakdown &amp; Bulk Calculator — ${prod.name}</span>
+              <span>Update Cost &amp; FIFO Batches — ${prod.name}</span>
             </div>
             <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
           </div>
           <div class="modal-body" style="overflow-y:auto;max-height:calc(88vh - 120px);padding:16px;">
-            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:14px;font-size:0.82rem;color:var(--color-brown-dark);line-height:1.45;">
-              Designed for bulk batch purchasing (e.g. 100 or 1000 pcs). Enter total batch quantity and total spend to calculate exact unit cost.
-            </div>
-
-            <!-- Material & Packaging Items Container -->
-            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;margin-bottom:14px;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--color-brown);">
-                  Material &amp; Packaging Components
-                </span>
-                <button type="button" class="btn btn-sm btn-secondary" id="btn-add-cost-item" style="font-size:0.75rem;padding:3px 10px;background:#ffffff;">
-                  ${renderIcon('plus', 12)}
-                  <span>+ Add Component</span>
-                </button>
-              </div>
-
-              <div id="cost-items-list" style="display:flex;flex-direction:column;gap:10px;">
-                ${breakdown.map((item, idx) => {
-                  const bCost = parseFloat(item.batch_cost) || 0;
-                  const bQty = parseFloat(item.batch_qty) || 1;
-                  const uCost = bQty > 0 ? (bCost / bQty) : 0;
-                  item.unit_cost = uCost;
-
-                  return `
-                    <div class="cost-row" data-idx="${idx}" style="background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px;">
-                      <div style="display:grid;grid-template-columns:1.8fr 1.2fr 1.2fr 1.2fr auto;gap:8px;align-items:center;">
-                        <div>
-                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Component Name</label>
-                          <input type="text" class="form-input cost-item-name" value="${item.name || ''}" placeholder="e.g. Body / Packaging / Sticker" style="padding:4px 6px;font-size:0.85rem;height:28px;">
-                        </div>
-                        <div>
-                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Total Qty (pcs)</label>
-                          <input type="number" step="1" min="1" class="form-input cost-item-qty" value="${item.batch_qty ?? 1000}" placeholder="e.g. 1000" style="padding:4px 6px;font-size:0.85rem;height:28px;">
-                        </div>
-                        <div>
-                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Total Cost (RM)</label>
-                          <input type="number" step="0.10" class="form-input cost-item-cost" value="${item.batch_cost ?? 0}" placeholder="e.g. 1500" style="padding:4px 6px;font-size:0.85rem;height:28px;">
-                        </div>
-                        <div style="text-align:right;">
-                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Unit Cost</label>
-                          <span class="num cost-item-unit" style="font-weight:800;font-size:0.92rem;color:var(--color-brown);line-height:28px;display:inline-block;">
-                            RM ${uCost < 0.1 && (uCost * 100) % 1 !== 0 ? uCost.toFixed(3) : uCost.toFixed(2)}
-                          </span>
-                        </div>
-                        <div>
-                          <label style="font-size:0.7rem;visibility:hidden;display:block;margin-bottom:2px;">Del</label>
-                          <button type="button" class="btn btn-sm btn-secondary btn-del-cost-item" data-idx="${idx}" style="padding:4px 6px;color:var(--text-muted);height:28px;" ${breakdown.length <= 1 ? 'disabled' : ''} title="Delete item">
-                            ${renderIcon('trash', 14)}
-                          </button>
-                        </div>
-                      </div>
-
-                      <!-- Optional component notes -->
-                      <div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light);">
-                        <input type="text" class="form-input cost-item-notes" value="${item.notes || ''}" placeholder="Optional component notes (e.g. Supplier, batch reference)" style="padding:3px 8px;font-size:0.75rem;height:26px;border-style:dashed;width:100%;">
-                      </div>
-                    </div>
-                  `;
-                }).join('')}
-              </div>
-
-              <!-- Computed Sum Banner -->
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--border-light);">
-                <div>
-                  <span style="font-size:0.82rem;color:var(--text-muted);font-weight:600;">Total Itemized Cost:</span>
-                  <span id="total-itemized-cost-display" class="num" style="font-size:1.25rem;font-weight:800;color:var(--color-brown);margin-left:8px;">
-                    RM 0.00 / unit
-                  </span>
+            
+            <!-- FIFO Valuation Summary Banner -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:10px;margin-bottom:14px;">
+              <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-left:4px solid var(--color-brown);border-radius:var(--radius-sm);padding:10px 12px;">
+                <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);">Active Unit Cost (FIFO)</div>
+                <div style="font-size:1.3rem;font-weight:800;font-family:var(--font-mono);color:var(--color-brown);margin-top:2px;">
+                  RM ${activeCost.toFixed(2)}
                 </div>
-                <button type="button" class="btn btn-sm btn-primary" id="btn-apply-computed-cost" style="font-size:0.75rem;padding:4px 12px;">
-                  Apply to Final Unit Cost
-                </button>
+                <div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px;">Currently deducted in POS</div>
+              </div>
+
+              <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px 12px;">
+                <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);">Total In Stock</div>
+                <div style="font-size:1.3rem;font-weight:800;font-family:var(--font-mono);color:var(--color-brown-dark);margin-top:2px;">
+                  ${totalRemaining} <span style="font-size:0.8rem;font-weight:600;color:var(--text-muted);">pcs</span>
+                </div>
+                <div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px;">Sum of remaining batch pieces</div>
+              </div>
+
+              <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px 12px;">
+                <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);">Total Batch Cost Value</div>
+                <div style="font-size:1.3rem;font-weight:800;font-family:var(--font-mono);color:var(--text-main);margin-top:2px;">
+                  RM ${totalBatchVal.toFixed(2)}
+                </div>
+                <div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px;">Remaining investment value</div>
               </div>
             </div>
 
-            <!-- Date and Unit Cost Input -->
-            <div class="grid-2">
-              <div class="form-group">
-                <label class="form-label" style="font-weight:700;">Update Date</label>
-                <input type="date" id="update-cost-date" class="form-input" value="${today}">
-              </div>
-              <div class="form-group">
-                <label class="form-label" style="font-weight:700;">Final Unit Cost (RM)</label>
-                <input type="number" step="0.01" id="new-cost-input" class="form-input number-input" value="${prod.cost || 0}" style="font-size:1.15rem;font-weight:700;color:var(--color-brown-dark);">
-              </div>
+            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:14px;font-size:0.75rem;color:var(--color-brown-dark);line-height:1.4;">
+              <strong>FIFO (First-In, First-Out) Engine:</strong> Sales automatically consume Batch #1 first. Once Batch #1 sells out (reaches 0 pcs), Batch #2 automatically activates with its own unit cost. You can edit or delete any batch below during testing.
             </div>
 
-            <div class="form-group">
-              <label class="form-label">Cost Update Reason</label>
-              <input type="text" id="cost-reason-input" class="form-input" placeholder="e.g. Bulk purchase cost breakdown update">
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">General Cost Notes</label>
-              <textarea id="cost-notes-textarea" class="form-textarea" rows="2" placeholder="e.g. 1000 pcs main items RM1500 + 500 pcs bags RM25 + 1000 pcs stickers RM20">${prod.cost_notes || ''}</textarea>
-            </div>
-
-            <!-- Past Cost & Component History Section -->
-            <div style="margin-top:18px;border-top:1px solid var(--border-light);padding-top:14px;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--color-brown);">
-                  Cost &amp; Component History (${productHistory.length} records)
+            <!-- SECTION 1: FIFO BATCHES QUEUE -->
+            <div style="background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:16px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <span style="font-size:0.8rem;font-weight:700;text-transform:uppercase;color:var(--color-brown);">
+                  1. Current FIFO Batches Queue (${batches.length} batches)
                 </span>
                 <span style="font-size:0.72rem;color:var(--text-muted);">
-                  Previous prices and component breakdowns
+                  Ordered oldest to newest
                 </span>
               </div>
 
-              ${productHistory.length === 0 ? `
-                <div style="font-size:0.76rem;color:var(--text-muted);font-style:italic;padding:8px 10px;background:var(--bg-secondary);border-radius:var(--radius-sm);border:1px dashed var(--border-light);">
-                  No previous cost updates recorded yet. Any saved cost update will appear here with full component snapshots.
-                </div>
-              ` : `
-                <div style="display:flex;flex-direction:column;gap:10px;max-height:260px;overflow-y:auto;padding-right:4px;">
-                  ${productHistory.map((h, hIdx) => {
-                    const hasComps = Array.isArray(h.components) && h.components.length > 0;
-                    return `
-                      <div style="background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+              <div id="fifo-batches-list" style="display:flex;flex-direction:column;gap:10px;">
+                ${batches.map((b, bIdx) => {
+                  const bRem = Math.max(0, Number(b.remaining_qty) || 0);
+                  const isDepleted = bRem <= 0;
+                  const isActiveNow = !isDepleted && (batches.findIndex(x => (Number(x.remaining_qty) || 0) > 0) === bIdx);
+                  const isQueued = !isDepleted && !isActiveNow;
+                  const isEditing = editingBatchId === b.id;
+
+                  return `
+                    <div class="fifo-batch-card" data-batch-id="${b.id}" style="background:${isActiveNow ? 'var(--bg-secondary)' : '#ffffff'};border:1px solid ${isActiveNow ? 'var(--color-brown)' : 'var(--border-light)'};border-radius:var(--radius-sm);padding:10px;">
+                      ${!isEditing ? `
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
                           <div>
-                            <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown-dark);font-size:0.72rem;font-weight:700;">
-                              ${h.date || (h.timestamp ? h.timestamp.split('T')[0] : 'N/A')}
-                            </span>
-                            <span style="font-weight:700;font-size:0.88rem;color:var(--text-main);margin-left:8px;">
-                              Cost: <span style="color:var(--text-muted);text-decoration:line-through;">RM ${Number(h.previous_cost || 0).toFixed(2)}</span> &rarr; <strong style="color:var(--color-brown);">RM ${Number(h.new_cost || 0).toFixed(2)}</strong>
-                            </span>
-                            ${h.selling_price ? `<span style="font-size:0.75rem;color:var(--text-muted);margin-left:6px;">(Selling: RM ${Number(h.selling_price).toFixed(2)})</span>` : ''}
+                            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                              <span class="badge" style="background:${isActiveNow ? 'var(--color-brown)' : isQueued ? 'var(--bg-card)' : '#e0e0e0'};color:${isActiveNow ? '#ffffff' : 'var(--color-brown-dark)'};font-weight:700;font-size:0.72rem;padding:2px 7px;">
+                                ${isActiveNow ? `Batch #${bIdx + 1} (Active - Selling Now)` : isQueued ? `Batch #${bIdx + 1} (Queued - Next)` : `Batch #${bIdx + 1} (Depleted / Sold)`}
+                              </span>
+                              <span style="font-size:0.78rem;color:var(--text-muted);font-weight:600;">Date: ${b.date || 'N/A'}</span>
+                            </div>
+                            <div style="margin-top:6px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+                              <span style="font-size:0.85rem;font-weight:700;color:var(--color-brown);">
+                                Unit Cost: RM ${Number(b.unit_cost || 0).toFixed(2)}
+                              </span>
+                              <span style="font-size:0.85rem;font-weight:700;color:var(--color-brown-dark);">
+                                Stock: ${bRem} / ${b.initial_qty ?? bRem} pcs remaining
+                              </span>
+                            </div>
+                            ${b.notes ? `<div style="font-size:0.74rem;color:var(--text-muted);margin-top:4px;">${b.notes}</div>` : ''}
                           </div>
-                          <div style="display:flex;align-items:center;gap:6px;">
-                            ${hasComps ? `
-                              <button type="button" class="btn btn-sm btn-secondary btn-restore-history-comps" data-history-idx="${hIdx}" style="font-size:0.7rem;padding:2px 8px;" title="Load this component breakdown into the editor above">
-                                Use These Components
-                              </button>
-                            ` : ''}
-                            <button type="button" class="btn btn-sm btn-secondary btn-del-modal-history" data-log-id="${h.id}" style="font-size:0.7rem;padding:2px 6px;color:var(--color-danger);" title="Delete this wrong cost record">
+
+                          <div style="display:flex;gap:6px;align-items:center;">
+                            <button type="button" class="btn btn-sm btn-secondary btn-edit-batch" data-batch-id="${b.id}" style="font-size:0.72rem;padding:2px 8px;">
+                              Edit
+                            </button>
+                            <button type="button" class="btn btn-sm btn-secondary btn-del-batch" data-batch-id="${b.id}" style="font-size:0.72rem;padding:2px 6px;color:var(--color-danger);" ${batches.length <= 1 ? 'disabled' : ''} title="Delete this batch">
                               Delete
                             </button>
                           </div>
                         </div>
-
-                        ${h.notes ? `
-                          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
-                            ${h.notes}
+                      ` : `
+                        <!-- Inline Edit Form for this Batch -->
+                        <div style="background:#ffffff;padding:8px;border-radius:var(--radius-sm);border:1px dashed var(--color-brown);">
+                          <div style="font-size:0.75rem;font-weight:700;color:var(--color-brown);margin-bottom:8px;">
+                            Edit Batch #${bIdx + 1} Details
                           </div>
-                        ` : ''}
-
-                        ${hasComps ? `
-                          <div style="margin-top:8px;background:var(--bg-secondary);border-radius:var(--radius-sm);padding:8px;">
-                            <div style="font-size:0.7rem;font-weight:700;color:var(--color-brown);margin-bottom:4px;text-transform:uppercase;">
-                              Component Breakdown Snapshot (${h.components.length})
+                          <div class="grid-2" style="margin-bottom:6px;">
+                            <div>
+                              <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Batch Date</label>
+                              <input type="date" class="form-input edit-batch-date" value="${b.date || today}" style="padding:2px 6px;font-size:0.8rem;height:28px;">
                             </div>
-                            <table style="width:100%;font-size:0.75rem;border-collapse:collapse;">
-                              <thead>
-                                <tr style="border-bottom:1px solid var(--border-light);color:var(--text-muted);text-align:left;">
-                                  <th style="padding:2px 4px;">Component</th>
-                                  <th style="padding:2px 4px;text-align:right;">Total Qty</th>
-                                  <th style="padding:2px 4px;text-align:right;">Total Spend</th>
-                                  <th style="padding:2px 4px;text-align:right;">Unit Cost</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                ${h.components.map(c => `
-                                  <tr style="border-bottom:1px dashed var(--border-light);">
-                                    <td style="padding:3px 4px;font-weight:600;">${c.name || 'Component'}</td>
-                                    <td style="padding:3px 4px;text-align:right;">${c.batch_qty || 1} pcs</td>
-                                    <td style="padding:3px 4px;text-align:right;">RM ${Number(c.batch_cost || 0).toFixed(2)}</td>
-                                    <td style="padding:3px 4px;text-align:right;font-weight:700;color:var(--color-brown);">RM ${Number(c.unit_cost || 0).toFixed(2)}</td>
-                                  </tr>
-                                `).join('')}
-                              </tbody>
-                            </table>
+                            <div>
+                              <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Unit Cost (RM)</label>
+                              <input type="number" step="0.01" class="form-input edit-batch-cost" value="${b.unit_cost || 0}" style="padding:2px 6px;font-size:0.8rem;height:28px;">
+                            </div>
                           </div>
-                        ` : ''}
+                          <div class="grid-2" style="margin-bottom:6px;">
+                            <div>
+                              <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Remaining Qty (pcs)</label>
+                              <input type="number" min="0" step="1" class="form-input edit-batch-rem" value="${b.remaining_qty || 0}" style="padding:2px 6px;font-size:0.8rem;height:28px;">
+                            </div>
+                            <div>
+                              <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Initial Qty (pcs)</label>
+                              <input type="number" min="0" step="1" class="form-input edit-batch-init" value="${b.initial_qty || b.remaining_qty || 0}" style="padding:2px 6px;font-size:0.8rem;height:28px;">
+                            </div>
+                          </div>
+                          <div style="margin-bottom:8px;">
+                            <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Batch Notes</label>
+                            <input type="text" class="form-input edit-batch-notes" value="${b.notes || ''}" placeholder="e.g. First order batch" style="padding:2px 6px;font-size:0.8rem;height:28px;">
+                          </div>
+                          <div style="display:flex;justify-content:flex-end;gap:6px;">
+                            <button type="button" class="btn btn-sm btn-secondary btn-cancel-edit-batch" style="font-size:0.72rem;padding:2px 8px;">Cancel</button>
+                            <button type="button" class="btn btn-sm btn-primary btn-save-batch-edit" data-batch-id="${b.id}" style="font-size:0.72rem;padding:2px 10px;">Save Batch</button>
+                          </div>
+                        </div>
+                      `}
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <!-- SECTION 2: ADD NEW INWARD BATCH / RESTOCK -->
+            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:16px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <span style="font-size:0.8rem;font-weight:700;text-transform:uppercase;color:var(--color-brown);">
+                  2. Add New Inward Batch / Restock (New Purchase)
+                </span>
+              </div>
+
+              <div class="grid-2" style="margin-bottom:10px;">
+                <div class="form-group" style="margin-bottom:0;">
+                  <label class="form-label" style="font-size:0.75rem;">Inward / Restock Date</label>
+                  <input type="date" id="new-batch-date" class="form-input" value="${today}" style="height:32px;">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                  <label class="form-label" style="font-size:0.75rem;font-weight:700;color:var(--color-brown-dark);">Quantity Received (pcs)</label>
+                  <input type="number" min="1" step="1" id="new-batch-qty" class="form-input" placeholder="e.g. 100" style="height:32px;font-weight:700;">
+                </div>
+              </div>
+
+              <!-- Breakdown Calculator for New Batch -->
+              <div style="background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px;margin-bottom:10px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                  <span style="font-size:0.72rem;font-weight:700;color:var(--color-brown);text-transform:uppercase;">
+                    Material &amp; Packaging Components Breakdown
+                  </span>
+                  <button type="button" class="btn btn-sm btn-secondary" id="btn-add-new-batch-comp" style="font-size:0.7rem;padding:2px 8px;">
+                    ${renderIcon('plus', 12)}
+                    <span>+ Component</span>
+                  </button>
+                </div>
+
+                <div id="new-batch-comps-list" style="display:flex;flex-direction:column;gap:8px;">
+                  ${newBatchBreakdown.map((item, idx) => {
+                    const bCost = parseFloat(item.batch_cost) || 0;
+                    const bQty = parseFloat(item.batch_qty) || 1;
+                    const uCost = bQty > 0 ? (bCost / bQty) : 0;
+                    item.unit_cost = uCost;
+
+                    return `
+                      <div class="batch-comp-row" data-idx="${idx}" style="display:grid;grid-template-columns:1.8fr 1.1fr 1.1fr 1fr auto;gap:6px;align-items:center;background:var(--bg-secondary);padding:6px 8px;border-radius:var(--radius-sm);">
+                        <div>
+                          <input type="text" class="form-input bcomp-name" value="${item.name || ''}" placeholder="Component Name" style="padding:2px 6px;font-size:0.8rem;height:26px;">
+                        </div>
+                        <div>
+                          <input type="number" step="1" min="1" class="form-input bcomp-qty" value="${item.batch_qty ?? 1000}" placeholder="Qty pcs" style="padding:2px 6px;font-size:0.8rem;height:26px;">
+                        </div>
+                        <div>
+                          <input type="number" step="0.10" class="form-input bcomp-cost" value="${item.batch_cost ?? 0}" placeholder="Cost RM" style="padding:2px 6px;font-size:0.8rem;height:26px;">
+                        </div>
+                        <div style="text-align:right;">
+                          <span class="num bcomp-unit" style="font-size:0.82rem;font-weight:800;color:var(--color-brown);">
+                            RM ${uCost < 0.1 && (uCost * 100) % 1 !== 0 ? uCost.toFixed(3) : uCost.toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <button type="button" class="btn btn-sm btn-secondary btn-del-bcomp" data-idx="${idx}" style="padding:2px 5px;color:var(--text-muted);height:26px;" ${newBatchBreakdown.length <= 1 ? 'disabled' : ''}>
+                            ${renderIcon('trash', 12)}
+                          </button>
+                        </div>
                       </div>
                     `;
                   }).join('')}
                 </div>
+
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-light);">
+                  <span style="font-size:0.75rem;font-weight:700;color:var(--text-muted);">
+                    Calculated Breakdown Total: <strong id="new-batch-calc-unit" style="color:var(--color-brown);font-size:0.95rem;">RM 0.00</strong>
+                  </span>
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span style="font-size:0.72rem;color:var(--text-muted);font-weight:600;">Batch Unit Cost:</span>
+                    <input type="number" step="0.01" id="new-batch-unit-cost" class="form-input" style="width:90px;height:26px;font-size:0.85rem;font-weight:700;">
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom:10px;">
+                <label class="form-label" style="font-size:0.75rem;">Batch Notes (e.g. Supplier, reorder reference)</label>
+                <input type="text" id="new-batch-notes" class="form-input" placeholder="e.g. Second batch reprint 100 pcs" style="height:30px;">
+              </div>
+
+              <div style="text-align:right;">
+                <button type="button" class="btn btn-primary" id="btn-add-inward-batch" style="padding:6px 16px;">
+                  ${renderIcon('plus', 14)}
+                  <span>+ Add Batch to FIFO Queue</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- SECTION 3: COST HISTORY AUDIT LOG -->
+            <div style="border-top:1px solid var(--border-light);padding-top:14px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--color-brown);">
+                  3. Cost History &amp; Audit Trail (${productHistory.length} logs)
+                </span>
+                <span style="font-size:0.72rem;color:var(--text-muted);">
+                  Every cost change is logged
+                </span>
+              </div>
+
+              ${productHistory.length === 0 ? `
+                <div style="font-size:0.75rem;color:var(--text-muted);font-style:italic;padding:8px 10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">
+                  No cost change logs recorded yet.
+                </div>
+              ` : `
+                <div style="display:flex;flex-direction:column;gap:8px;max-height:220px;overflow-y:auto;padding-right:4px;">
+                  ${productHistory.map(h => `
+                    <div style="background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                      <div>
+                        <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown-dark);font-size:0.7rem;font-weight:700;">
+                          ${h.date || (h.timestamp ? h.timestamp.split('T')[0] : 'N/A')}
+                        </span>
+                        <span style="font-size:0.82rem;font-weight:700;color:var(--text-main);margin-left:6px;">
+                          Cost: RM ${Number(h.previous_cost || 0).toFixed(2)} &rarr; <strong style="color:var(--color-brown);">RM ${Number(h.new_cost || 0).toFixed(2)}</strong>
+                        </span>
+                        ${h.notes ? `<span style="font-size:0.72rem;color:var(--text-muted);margin-left:6px;">(${h.notes})</span>` : ''}
+                      </div>
+                      <button type="button" class="btn btn-sm btn-secondary btn-del-modal-history" data-log-id="${h.id}" style="font-size:0.7rem;padding:2px 6px;color:var(--color-danger);" title="Delete this log record">
+                        Delete
+                      </button>
+                    </div>
+                  `).join('')}
+                </div>
               `}
             </div>
+
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" id="modal-cost-abort-btn">Cancel</button>
-            <button type="button" class="btn btn-primary" id="modal-cost-save-btn">
-              Save &amp; Update Unit Cost
-            </button>
+            <button type="button" class="btn btn-secondary" id="modal-cost-close-btn">Close</button>
           </div>
         </div>
       </div>
     `;
 
     document.getElementById('modal-close-btn').addEventListener('click', closeModal);
-    document.getElementById('modal-cost-abort-btn').addEventListener('click', closeModal);
+    document.getElementById('modal-cost-close-btn').addEventListener('click', closeModal);
 
-    // Live calculation helper
-    function recalculateAll() {
+    // Recalculate new batch breakdown
+    function recalcNewBatchBreakdown() {
       let total = 0;
-      container.querySelectorAll('.cost-row').forEach(row => {
-        const costInput = row.querySelector('.cost-item-cost');
-        const qtyInput = row.querySelector('.cost-item-qty');
-        const unitDisplay = row.querySelector('.cost-item-unit');
-
-        const bCost = parseFloat(costInput?.value) || 0;
-        const bQty = parseFloat(qtyInput?.value) || 1;
-        const uCost = bQty > 0 ? (bCost / bQty) : 0;
-
-        if (unitDisplay) {
-          unitDisplay.textContent = `RM ${uCost < 0.1 && (uCost * 100) % 1 !== 0 ? uCost.toFixed(3) : uCost.toFixed(2)}`;
+      container.querySelectorAll('.batch-comp-row').forEach(row => {
+        const qty = parseFloat(row.querySelector('.bcomp-qty')?.value) || 1;
+        const cost = parseFloat(row.querySelector('.bcomp-cost')?.value) || 0;
+        const uCost = qty > 0 ? (cost / qty) : 0;
+        const unitDisp = row.querySelector('.bcomp-unit');
+        if (unitDisp) {
+          unitDisp.textContent = `RM ${uCost < 0.1 && (uCost * 100) % 1 !== 0 ? uCost.toFixed(3) : uCost.toFixed(2)}`;
         }
         total += uCost;
       });
 
-      const totalDisplay = document.getElementById('total-itemized-cost-display');
-      if (totalDisplay) {
-        totalDisplay.textContent = `RM ${total < 0.1 && (total * 100) % 1 !== 0 ? total.toFixed(3) : total.toFixed(2)} / unit`;
+      const disp = document.getElementById('new-batch-calc-unit');
+      if (disp) {
+        disp.textContent = `RM ${total < 0.1 && (total * 100) % 1 !== 0 ? total.toFixed(3) : total.toFixed(2)}`;
       }
       return total;
     }
 
-    // Add cost item row
-    document.getElementById('btn-add-cost-item').addEventListener('click', () => {
-      saveInputsToBreakdown();
-      breakdown.push({ name: '', batch_qty: 1000, batch_cost: 0, unit_cost: 0, notes: '' });
+    // Save inputs of breakdown
+    function saveNewBatchBreakdown() {
+      container.querySelectorAll('.batch-comp-row').forEach(row => {
+        const idx = parseInt(row.getAttribute('data-idx'), 10);
+        if (newBatchBreakdown[idx]) {
+          newBatchBreakdown[idx].name = row.querySelector('.bcomp-name')?.value || '';
+          newBatchBreakdown[idx].batch_qty = parseFloat(row.querySelector('.bcomp-qty')?.value) || 1;
+          newBatchBreakdown[idx].batch_cost = parseFloat(row.querySelector('.bcomp-cost')?.value) || 0;
+          newBatchBreakdown[idx].unit_cost = newBatchBreakdown[idx].batch_qty > 0 ? (newBatchBreakdown[idx].batch_cost / newBatchBreakdown[idx].batch_qty) : 0;
+        }
+      });
+    }
+
+    // Breakdown input live updates
+    container.querySelectorAll('.bcomp-qty, .bcomp-cost').forEach(input => {
+      input.addEventListener('input', () => {
+        const total = recalcNewBatchBreakdown();
+        const unitInput = document.getElementById('new-batch-unit-cost');
+        if (unitInput) unitInput.value = total.toFixed(2);
+      });
+    });
+
+    // Add component button
+    document.getElementById('btn-add-new-batch-comp')?.addEventListener('click', () => {
+      saveNewBatchBreakdown();
+      newBatchBreakdown.push({ name: '', batch_qty: 1000, batch_cost: 0, unit_cost: 0 });
       renderModalContent();
     });
 
-    // Delete cost item row
-    container.querySelectorAll('.btn-del-cost-item').forEach(btn => {
+    // Delete component button
+    container.querySelectorAll('.btn-del-bcomp').forEach(btn => {
       btn.addEventListener('click', () => {
-        saveInputsToBreakdown();
+        saveNewBatchBreakdown();
         const idx = parseInt(btn.getAttribute('data-idx'), 10);
-        breakdown.splice(idx, 1);
-        if (breakdown.length === 0) {
-          breakdown.push({ name: 'Component item', batch_qty: 1000, batch_cost: 0, unit_cost: 0, notes: '' });
-        }
+        newBatchBreakdown.splice(idx, 1);
         renderModalContent();
       });
     });
 
-    // Restore history components
-    container.querySelectorAll('.btn-restore-history-comps').forEach(btn => {
+    // Inline edit batch listeners
+    container.querySelectorAll('.btn-edit-batch').forEach(btn => {
       btn.addEventListener('click', () => {
-        saveInputsToBreakdown();
-        const hIdx = parseInt(btn.getAttribute('data-history-idx'), 10);
-        const targetHist = productHistory[hIdx];
-        if (targetHist && Array.isArray(targetHist.components) && targetHist.components.length > 0) {
-          breakdown = JSON.parse(JSON.stringify(targetHist.components));
+        editingBatchId = btn.getAttribute('data-batch-id');
+        renderModalContent();
+      });
+    });
+
+    container.querySelectorAll('.btn-cancel-edit-batch').forEach(btn => {
+      btn.addEventListener('click', () => {
+        editingBatchId = null;
+        renderModalContent();
+      });
+    });
+
+    // Save edited batch
+    container.querySelectorAll('.btn-save-batch-edit').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const batchId = btn.getAttribute('data-batch-id');
+        const card = container.querySelector(`.fifo-batch-card[data-batch-id="${batchId}"]`);
+        if (!card) return;
+
+        const newDate = card.querySelector('.edit-batch-date')?.value || today;
+        const newUnitCost = round(parseFloat(card.querySelector('.edit-batch-cost')?.value) || 0);
+        const newRem = parseInt(card.querySelector('.edit-batch-rem')?.value, 10) || 0;
+        const newInit = parseInt(card.querySelector('.edit-batch-init')?.value, 10) || newRem;
+        const newNotes = card.querySelector('.edit-batch-notes')?.value || '';
+
+        const targetBatch = batches.find(b => b.id === batchId);
+        if (targetBatch) {
+          targetBatch.date = newDate;
+          targetBatch.unit_cost = newUnitCost;
+          targetBatch.remaining_qty = newRem;
+          targetBatch.initial_qty = newInit;
+          targetBatch.notes = newNotes;
+        }
+
+        editingBatchId = null;
+
+        // Persist to product
+        const product = await db.getById('products', prod.id);
+        if (product) {
+          product.cost_batches = batches;
+          // Recalculate total physical stock and active cost
+          product.stock = batches.reduce((sum, b) => sum + Math.max(0, Number(b.remaining_qty) || 0), 0);
+          const firstActive = batches.find(b => (Number(b.remaining_qty) || 0) > 0);
+          if (firstActive) {
+            product.cost = Number(firstActive.unit_cost) || 0;
+          }
+          await db.putItem('products', product);
+          await store.refreshAll();
+          showToast('Batch updated successfully!', 'success');
+        }
+
+        renderModalContent();
+      });
+    });
+
+    // Delete batch
+    container.querySelectorAll('.btn-del-batch').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const batchId = btn.getAttribute('data-batch-id');
+        if (confirm('Are you sure you want to delete this FIFO batch? Remaining stock for this batch will be removed.')) {
+          batches = batches.filter(b => b.id !== batchId);
+          if (batches.length === 0) {
+            batches = [{
+              id: 'batch_init_' + prod.id,
+              date: today,
+              initial_qty: 0,
+              remaining_qty: 0,
+              unit_cost: Number(prod.cost) || 0,
+              notes: 'Reset empty batch'
+            }];
+          }
+
+          const product = await db.getById('products', prod.id);
+          if (product) {
+            product.cost_batches = batches;
+            product.stock = batches.reduce((sum, b) => sum + Math.max(0, Number(b.remaining_qty) || 0), 0);
+            const firstActive = batches.find(b => (Number(b.remaining_qty) || 0) > 0);
+            if (firstActive) {
+              product.cost = Number(firstActive.unit_cost) || 0;
+            }
+            await db.putItem('products', product);
+            await store.refreshAll();
+            showToast('Batch deleted.', 'info');
+          }
+
           renderModalContent();
-          const total = recalculateAll();
-          document.getElementById('new-cost-input').value = total.toFixed(2);
-          showToast(`Loaded ${targetHist.components.length} components from ${targetHist.date || 'history'}!`, 'info');
         }
       });
     });
 
-    // Delete mistaken history log entry
+    // Add Inward Batch to FIFO Queue button
+    document.getElementById('btn-add-inward-batch')?.addEventListener('click', async () => {
+      saveNewBatchBreakdown();
+      const inDate = document.getElementById('new-batch-date')?.value || today;
+      const inQty = parseInt(document.getElementById('new-batch-qty')?.value, 10);
+      const inUnitCost = round(parseFloat(document.getElementById('new-batch-unit-cost')?.value) || recalcNewBatchBreakdown());
+      const inNotes = document.getElementById('new-batch-notes')?.value.trim() || 'Inward restock batch';
+
+      if (isNaN(inQty) || inQty <= 0) {
+        alert('Please enter a valid received quantity greater than 0.');
+        return;
+      }
+
+      const newBatchId = generateId('batch');
+      const newBatch = {
+        id: newBatchId,
+        date: inDate,
+        initial_qty: inQty,
+        remaining_qty: inQty,
+        unit_cost: inUnitCost,
+        cost_breakdown: JSON.parse(JSON.stringify(newBatchBreakdown)),
+        notes: inNotes,
+        created_at: new Date().toISOString()
+      };
+
+      batches.push(newBatch);
+
+      const product = await db.getById('products', prod.id);
+      if (product) {
+        product.cost_batches = batches;
+        // Total stock is sum of all batch remaining quantities
+        product.stock = batches.reduce((sum, b) => sum + Math.max(0, Number(b.remaining_qty) || 0), 0);
+        
+        // Active unit cost is the first batch with remaining_qty > 0
+        const firstActive = batches.find(b => (Number(b.remaining_qty) || 0) > 0);
+        if (firstActive) {
+          product.cost = Number(firstActive.unit_cost) || 0;
+        }
+
+        await db.putItem('products', product);
+
+        // Record into cost_history audit trail
+        await db.addItem('cost_history', {
+          id: generateId('cost'),
+          product_id: product.id,
+          product_name: product.name,
+          previous_cost: Number(prod.cost) || 0,
+          new_cost: inUnitCost,
+          selling_price: Number(product.selling_price) || 0,
+          notes: `Restock batch: ${inQty} pcs @ RM ${inUnitCost.toFixed(2)} (${inNotes})`,
+          components: JSON.parse(JSON.stringify(newBatchBreakdown)),
+          date: inDate,
+          timestamp: new Date().toISOString()
+        });
+
+        // Record stock movement inward
+        await db.addItem('stock_movements', {
+          id: generateId('smov'),
+          product_id: product.id,
+          product_name: product.name,
+          delta: inQty,
+          previous_stock: Number(prod.stock) || 0,
+          new_stock: product.stock,
+          reason: 'purchase_in',
+          notes: `Batch inward: ${inQty} pcs @ RM ${inUnitCost.toFixed(2)} (${inNotes})`,
+          timestamp: new Date().toISOString()
+        });
+
+        await store.refreshAll();
+        showToast(`Added ${inQty} pcs batch to FIFO queue!`, 'success');
+      }
+
+      renderModalContent();
+    });
+
+    // Delete mistaken log entry
     container.querySelectorAll('.btn-del-modal-history').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const logId = btn.getAttribute('data-log-id');
-        if (confirm('Are you sure you want to delete this historical cost record?')) {
+        if (confirm('Are you sure you want to delete this cost history record?')) {
           await db.deleteItem('cost_history', logId);
           await store.refreshAll();
           showToast('Cost history record deleted.', 'info');
@@ -9206,68 +9681,16 @@ function openQuickCostModal(prod) {
       });
     });
 
-    // Real-time live recalculate on any cost or quantity keystroke
-    container.querySelectorAll('.cost-item-cost, .cost-item-qty').forEach(input => {
-      input.addEventListener('input', () => {
-        const total = recalculateAll();
-        document.getElementById('new-cost-input').value = total.toFixed(2);
-      });
-    });
-
-    // Apply computed cost button
-    const applyBtn = document.getElementById('btn-apply-computed-cost');
-    if (applyBtn) {
-      applyBtn.addEventListener('click', () => {
-        const total = recalculateAll();
-        document.getElementById('new-cost-input').value = total.toFixed(2);
-        showToast(`Unit cost applied: RM ${total.toFixed(2)}`, 'success');
-      });
+    // Initial breakdown calc for new batch
+    const initTotal = recalcNewBatchBreakdown();
+    const unitInput = document.getElementById('new-batch-unit-cost');
+    if (unitInput && !unitInput.value) {
+      unitInput.value = initTotal.toFixed(2);
     }
-
-    // Save final cost
-    document.getElementById('modal-cost-save-btn').addEventListener('click', async () => {
-      saveInputsToBreakdown();
-      const newCost = parseFloat(document.getElementById('new-cost-input').value) || 0;
-      const updateDate = document.getElementById('update-cost-date')?.value || today;
-      const reason = document.getElementById('cost-reason-input').value.trim();
-      const costNotes = document.getElementById('cost-notes-textarea').value.trim();
-
-      try {
-        const product = await db.getById('products', prod.id);
-        if (product) {
-          product.cost_breakdown = breakdown;
-          product.cost_notes = costNotes;
-          await db.putItem('products', product);
-        }
-        await updateProductCost(prod.id, newCost, reason || 'Bulk purchase cost breakdown update', updateDate, breakdown);
-        showToast('Cost breakdown and unit cost saved!', 'success');
-        closeModal();
-      } catch (err) {
-        alert(`Could not save cost: ${err.message}`);
-      }
-    });
-
-    // Initial recalculation on render
-    recalculateAll();
-  }
-
-  function saveInputsToBreakdown() {
-    container.querySelectorAll('.cost-row').forEach(row => {
-      const idx = parseInt(row.getAttribute('data-idx'), 10);
-      if (breakdown[idx]) {
-        breakdown[idx].name = row.querySelector('.cost-item-name')?.value || '';
-        breakdown[idx].batch_qty = parseFloat(row.querySelector('.cost-item-qty')?.value) || 1;
-        breakdown[idx].batch_cost = parseFloat(row.querySelector('.cost-item-cost')?.value) || 0;
-        breakdown[idx].notes = row.querySelector('.cost-item-notes')?.value || '';
-        const uCost = breakdown[idx].batch_qty > 0 ? (breakdown[idx].batch_cost / breakdown[idx].batch_qty) : 0;
-        breakdown[idx].unit_cost = uCost;
-      }
-    });
   }
 
   renderModalContent();
 }
-
 // 7. Add & Edit Expense Modal
 function openAddExpenseModal() {
   openExpenseModal(null);
