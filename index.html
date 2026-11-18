@@ -509,6 +509,7 @@ h1.page-title {
   font-variant-numeric: tabular-nums;
   font-size: 0.92rem;
   font-weight: 600;
+  white-space: nowrap !important;
 }
 
 /* Badges */
@@ -6191,38 +6192,30 @@ function renderExpenses() {
             <table class="table table--mobile-cards">
               <thead>
                 <tr>
-                  <th style="cursor:pointer;" data-action="sort-expenses" data-col="date">
+                  <th style="cursor:pointer;white-space:nowrap;width:115px;" data-action="sort-expenses" data-col="date">
                     Date${sortIndicator('date')}
                   </th>
-                  <th style="cursor:pointer;" data-action="sort-expenses" data-col="name">
+                  <th style="cursor:pointer;min-width:130px;" data-action="sort-expenses" data-col="name">
                     Expense Name${sortIndicator('name')}
                   </th>
-                  <th style="cursor:pointer;" data-action="sort-expenses" data-col="category">
+                  <th style="cursor:pointer;width:110px;" data-action="sort-expenses" data-col="category">
                     Category${sortIndicator('category')}
                   </th>
-                  <th style="cursor:pointer;text-align:right;" data-action="sort-expenses" data-col="amount">
+                  <th style="cursor:pointer;text-align:right;white-space:nowrap;width:120px;" data-action="sort-expenses" data-col="amount">
                     Amount${sortIndicator('amount')}
                   </th>
-                  <th>Notes</th>
-                  <th style="text-align:right;">Actions</th>
+                  <th style="text-align:left;min-width:160px;">Notes</th>
+                  <th style="text-align:right;width:130px;white-space:nowrap;">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 ${expenses.map(exp => `
                   <tr>
-                    <td data-label="Date" style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">
-                      ${formatDate(exp.date)}
-                    </td>
+                    <td data-label="Date" style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">${formatDate(exp.date)}</td>
                     <td data-label="Expense Name" style="font-weight:700;color:var(--color-brown-dark);">${exp.name}</td>
-                    <td data-label="Category">
-                      <span class="badge badge-outline">${exp.category}</span>
-                    </td>
-                    <td data-label="Amount" class="num" style="text-align:right;font-weight:700;font-size:1.05rem;color:var(--color-brown);">
-                      ${formatRM(exp.amount)}
-                    </td>
-                    <td data-label="Notes" style="font-size:0.82rem;color:var(--text-muted);white-space:pre-wrap;word-break:break-word;">
-                      ${exp.notes || '-'}
-                    </td>
+                    <td data-label="Category"><span class="badge badge-outline">${exp.category}</span></td>
+                    <td data-label="Amount" class="num" style="text-align:right;font-weight:700;font-size:1.02rem;color:var(--color-brown-dark);white-space:nowrap;">${formatRM(exp.amount)}</td>
+                    <td data-label="Notes" style="font-size:0.85rem;color:var(--text-muted);white-space:pre-wrap;word-break:break-word;text-align:left;line-height:1.45;">${(exp.notes || '-').trim()}</td>
                     <td data-label="Actions" class="td-actions">
                       <div style="display:flex;gap:4px;justify-content:flex-end;">
                         <button type="button" class="btn btn-sm btn-secondary" data-action="open-edit-expense-modal" data-expense-id="${exp.id}">
@@ -7609,9 +7602,7 @@ function openOrderReceiptModal(order) {
               <span style="font-family:var(--font-mono);">${formatRM(order.final_amount)}</span>
             </div>
             ${order.payment_notes ? `
-              <div style="font-size:0.75rem;color:var(--text-muted);border-top:1px dashed var(--border-light);padding-top:6px;margin-top:6px;white-space:pre-wrap;word-break:break-word;">
-                <strong>Note:</strong> ${order.payment_notes}
-              </div>
+              <div style="font-size:0.75rem;color:var(--text-muted);border-top:1px dashed var(--border-light);padding-top:6px;margin-top:6px;white-space:pre-wrap;word-break:break-word;text-align:left;"><strong>Note:</strong> ${order.payment_notes.trim()}</div>
             ` : ''}
 
             <div style="text-align:center;margin-top:16px;font-size:0.75rem;color:var(--text-muted);">
@@ -7744,7 +7735,7 @@ function openOrderInspectModal(order) {
             ${order.payment_notes ? `
               <div style="display:flex;justify-content:space-between;padding-top:6px;border-top:1px dashed var(--border-light);align-items:flex-start;">
                 <span style="color:var(--text-muted);">Notes:</span>
-                <span style="font-weight:600;white-space:pre-wrap;word-break:break-word;text-align:right;max-width:65%;">${order.payment_notes}</span>
+                <span style="font-weight:600;white-space:pre-wrap;word-break:break-word;text-align:left;max-width:65%;">${order.payment_notes.trim()}</span>
               </div>
             ` : ''}
           </div>
