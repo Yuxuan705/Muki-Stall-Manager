@@ -1221,6 +1221,7 @@ function generateOrderNumber(sequence = 1) {
 
 const iconMap = {
   dashboard: `<path d="M3 3h7v9H3z"/><path d="M14 3h7v5h-7z"/><path d="M14 12h7v9h-7z"/><path d="M3 16h7v5H3z"/>`,
+  report: `<line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/>`,
   pos: `<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>`,
   promotions: `<path d="m19 12-7-7-8.5 8.5a2.12 2.12 0 0 0 0 3L7.5 20.5a2.12 2.12 0 0 0 3 0L19 12Z"/><circle cx="7.5" cy="7.5" r="1.5"/>`,
   dailyRecords: `<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>`,
@@ -2007,6 +2008,12 @@ class AppStore {
     await this.refreshAll();
   }
 
+  async reorderCategories(newCategories) {
+    if (!Array.isArray(newCategories) || newCategories.length === 0) return;
+    await db.putItem('settings', { key: 'custom_categories', value: newCategories });
+    await this.refreshAll();
+  }
+
   // --- Operating Expenses Categories Management ---
   getExpenseCategories() {
     const defaultExpenseCats = ['Stall rental', 'Transportation', 'Packaging', 'Printing', 'Defect & Wastage', 'Other'];
@@ -2032,6 +2039,12 @@ class AppStore {
     let cats = this.getExpenseCategories().filter(c => c !== name);
     if (cats.length === 0) cats = ['Other'];
     await db.putItem('settings', { key: 'custom_expense_categories', value: cats });
+    await this.refreshAll();
+  }
+
+  async reorderExpenseCategories(newCategories) {
+    if (!Array.isArray(newCategories) || newCategories.length === 0) return;
+    await db.putItem('settings', { key: 'custom_expense_categories', value: newCategories });
     await this.refreshAll();
   }
 
@@ -2096,6 +2109,10 @@ class AppStore {
       sorted.sort((a, b) => this.getAvailableStock(a.id) - this.getAvailableStock(b.id));
     } else if (criteria === 'stock_desc') {
       sorted.sort((a, b) => this.getAvailableStock(b.id) - this.getAvailableStock(a.id));
+    } else if (criteria === 'cost_desc') {
+      sorted.sort((a, b) => (Number(b.cost) || 0) - (Number(a.cost) || 0));
+    } else if (criteria === 'cost_asc') {
+      sorted.sort((a, b) => (Number(a.cost) || 0) - (Number(b.cost) || 0));
     } else if (criteria === 'category') {
       sorted.sort((a, b) => (a.category || '').localeCompare(b.category || '') || a.name.localeCompare(b.name));
     }
@@ -2950,6 +2967,120 @@ async function updateProductCost(productId, newCost, notes = '') {
 }
 
 
+/**
+ * Update an existing order / receipt
+ * Allows modifying payment method, payment notes, timestamp, discount, and item quantities/prices.
+ * Automatically synchronizes inventory differences and recalculates totals and profit snapshots.
+ */
+async function updateOrder(orderId, {
+  paymentMethod,
+  paymentNotes,
+  timestamp,
+  discount,
+  items
+}) {
+  const order = await db.getById('orders', orderId);
+  if (!order) throw new Error('Order not found.');
+
+  const wasCompleted = order.status !== 'cancelled';
+
+  // If order was completed and items changed, adjust inventory delta
+  if (wasCompleted && Array.isArray(items)) {
+    // 1. Calculate old item quantities by productId
+    const oldQtyMap = {};
+    (order.items || []).forEach(it => {
+      const pid = it.productId || it.product_id;
+      oldQtyMap[pid] = (oldQtyMap[pid] || 0) + (Number(it.quantity || it.qty) || 0);
+    });
+
+    // 2. Calculate new item quantities by productId
+    const newQtyMap = {};
+    items.forEach(it => {
+      const pid = it.productId || it.product_id;
+      newQtyMap[pid] = (newQtyMap[pid] || 0) + (Number(it.quantity || it.qty) || 0);
+    });
+
+    // 3. For each affected product, compute difference: delta = oldQty - newQty
+    const allPids = new Set([...Object.keys(oldQtyMap), ...Object.keys(newQtyMap)]);
+    for (const pid of allPids) {
+      const oldQ = oldQtyMap[pid] || 0;
+      const newQ = newQtyMap[pid] || 0;
+      const diff = oldQ - newQ; // if old 2, new 1 -> diff +1 (restore 1 to stock)
+      if (diff !== 0) {
+        const product = await db.getById('products', pid);
+        if (product) {
+          const prevStock = Number(product.stock) || 0;
+          product.stock = prevStock + diff;
+          product.updated_at = new Date().toISOString();
+          await db.putItem('products', product);
+
+          await db.addItem('stock_movements', {
+            id: generateId('smov'),
+            product_id: pid,
+            product_name: product.name,
+            delta: diff,
+            previous_stock: prevStock,
+            new_stock: product.stock,
+            reason: 'order_edit',
+            notes: `Receipt edit: Order ${order.order_number} adjusted quantity from ${oldQ} to ${newQ}`,
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+    }
+  }
+
+  // Recalculate financial totals
+  let subtotal = 0;
+  let totalCost = 0;
+  const newItemsSnapshot = (items || order.items || []).map(it => {
+    const qty = Number(it.quantity || it.qty) || 1;
+    const unitPrice = Boolean(it.isFreeGift) ? 0 : round(Number(it.unitPrice) || 0);
+    const itemSubtotal = round(unitPrice * qty);
+    const unitCost = Number(it.unitCost) ?? store.getComputedCost(it.productId);
+    const itemCostTotal = round(unitCost * qty);
+
+    subtotal += itemSubtotal;
+    totalCost += itemCostTotal;
+
+    return {
+      productId: it.productId,
+      name: it.name,
+      quantity: qty,
+      unitPrice,
+      unitCost,
+      subtotal: itemSubtotal,
+      itemCostTotal,
+      isFreeGift: Boolean(it.isFreeGift)
+    };
+  });
+
+  subtotal = round(subtotal);
+  totalCost = round(totalCost);
+
+  const appliedDiscount = round(Math.min(subtotal, Math.max(0, Number(discount ?? order.discount) || 0)));
+  const finalAmount = round(Math.max(0, subtotal - appliedDiscount));
+  const grossProfit = round(finalAmount - totalCost);
+
+  order.payment_method = paymentMethod || order.payment_method;
+  order.payment_notes = (paymentNotes !== undefined) ? paymentNotes : (order.payment_notes || '');
+  if (timestamp) {
+    order.timestamp = timestamp;
+    order.date = timestamp.split('T')[0];
+  }
+  order.items = newItemsSnapshot;
+  order.subtotal = subtotal;
+  order.discount = appliedDiscount;
+  order.final_amount = finalAmount;
+  order.total_cost = totalCost;
+  order.gross_profit = grossProfit;
+  order.updated_at = new Date().toISOString();
+
+  await db.putItem('orders', order);
+  await store.refreshAll();
+  return order;
+}
+
 
 // ==========================================
 // Module: Muki Stall Manager/js/services/backup.js
@@ -3730,11 +3861,12 @@ async function runAllTests() {
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
   { id: 'pos', label: 'Sales / POS', icon: 'pos' },
-  { id: 'promotions', label: 'Promotions', icon: 'promotions' },
-  { id: 'dailyRecords', label: 'Daily Records', icon: 'dailyRecords' },
-  { id: 'inventory', label: 'Inventory', icon: 'inventory' },
+  { id: 'promotions', label: 'Promotion', icon: 'promotions' },
+  { id: 'dailyRecords', label: 'Daily Record', icon: 'dailyRecords' },
+  { id: 'salesReports', label: 'Sales Reports', icon: 'report' },
   { id: 'expenses', label: 'Expenses', icon: 'expenses' },
-  { id: 'products', label: 'Products & Settings', icon: 'products' },
+  { id: 'inventory', label: 'Inventory', icon: 'inventory' },
+  { id: 'products', label: 'Products & Cost Management', icon: 'products' },
   { id: 'backup', label: 'Backup & Restore', icon: 'backup' }
 ];
 
@@ -3804,16 +3936,16 @@ function renderBottomNav(currentView) {
   const mobileItems = [
     { id: 'pos', label: 'POS', icon: 'pos' },
     { id: 'dashboard', label: 'Overview', icon: 'dashboard' },
-    { id: 'dailyRecords', label: 'Records', icon: 'dailyRecords' },
-    { id: 'inventory', label: 'Stock', icon: 'inventory' },
+    { id: 'dailyRecords', label: 'Daily', icon: 'dailyRecords' },
+    { id: 'salesReports', label: 'Reports', icon: 'report' },
     { id: 'more', label: 'More', icon: 'products' }
   ];
 
   return `
     <nav class="bottom-nav">
       ${mobileItems.map(item => `
-        <button type="button"
-          class="bottom-nav-item ${currentView === item.id ? 'active' : ''}"
+        <button type="button" 
+          class="bottom-nav-item ${currentView === item.id ? 'active' : ''}" 
           data-view="${item.id}"
           style="background:none;border:none;cursor:pointer;">
           ${renderIcon(item.icon, 22)}
@@ -3823,7 +3955,6 @@ function renderBottomNav(currentView) {
     </nav>
   `;
 }
-
 
 
 // ==========================================
@@ -4961,7 +5092,10 @@ function renderDailyRecords() {
                         <button type="button" class="btn btn-sm btn-secondary" data-action="inspect-order" data-order-id="${o.id}">
                           Inspect
                         </button>
-                        <button type="button" class="btn btn-sm btn-danger" data-action="delete-order-prompt" data-order-id="${o.id}" style="margin-left:4px;" title="Delete order and restore inventory">
+                        <button type="button" class="btn btn-sm btn-secondary" data-action="open-edit-order-modal" data-order-id="${o.id}" style="margin-left:4px;">
+                          Edit
+                        </button>
+                        <button type="button" class="btn btn-sm btn-secondary" data-action="delete-order-prompt" data-order-id="${o.id}" style="margin-left:4px;color:var(--text-muted);" title="Delete order and restore inventory">
                           Delete
                         </button>
                       </td>
@@ -4977,6 +5111,441 @@ function renderDailyRecords() {
   `;
 }
 
+
+
+// ==========================================
+// Module: Muki Stall Manager/js/components/salesReports.js
+// ==========================================
+/**
+ * Sales Reports & P&L Analytics Component
+ * Provides comprehensive sales reports, custom date range filtering (days, months, years, or all time),
+ * event profit & loss statement (Revenue - COGS - Expenses = Net Profit), product performance, and order editing.
+ */
+
+
+
+
+
+let activeRangePreset = 'this_month'; // 'today' | 'yesterday' | 'this_week' | 'this_month' | 'this_year' | 'all' | 'custom'
+let customStartDate = '';
+let customEndDate = '';
+let activeReportTab = 'orders'; // 'orders' | 'products' | 'payments'
+
+function setReportRangePreset(preset, start = '', end = '') {
+  activeRangePreset = preset;
+  if (start) customStartDate = start;
+  if (end) customEndDate = end;
+}
+
+function setReportTab(tab) {
+  activeReportTab = tab;
+}
+
+function computeDateInterval() {
+  const today = getTodayDateString();
+  const d = new Date();
+
+  if (activeRangePreset === 'today') {
+    return { start: today, end: today, label: 'Today' };
+  }
+
+  if (activeRangePreset === 'yesterday') {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    const yStr = y.toISOString().split('T')[0];
+    return { start: yStr, end: yStr, label: 'Yesterday' };
+  }
+
+  if (activeRangePreset === 'this_week') {
+    const curr = new Date();
+    const first = curr.getDate() - curr.getDay(); // Sunday or Monday
+    const firstDay = new Date(curr.setDate(first)).toISOString().split('T')[0];
+    return { start: firstDay, end: today, label: 'This Week' };
+  }
+
+  if (activeRangePreset === 'this_month') {
+    const firstDay = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+    return { start: firstDay, end: today, label: 'This Month' };
+  }
+
+  if (activeRangePreset === 'this_year') {
+    const firstDay = `${d.getFullYear()}-01-01`;
+    return { start: firstDay, end: today, label: 'This Year' };
+  }
+
+  if (activeRangePreset === 'all') {
+    return { start: '2020-01-01', end: '2099-12-31', label: 'All Time' };
+  }
+
+  // Custom
+  return {
+    start: customStartDate || today,
+    end: customEndDate || today,
+    label: `${customStartDate || today} to ${customEndDate || today}`
+  };
+}
+
+function renderSalesReports() {
+  const { start, end, label } = computeDateInterval();
+  const allOrders = store.orders || [];
+  const allExpenses = store.expenses || [];
+
+  // Filter orders in date range
+  const filteredOrders = allOrders.filter(o => {
+    const oDate = o.date || (o.timestamp ? o.timestamp.split('T')[0] : '');
+    return oDate >= start && oDate <= end;
+  });
+
+  const completedOrders = filteredOrders.filter(o => o.status !== 'cancelled');
+
+  // Filter expenses in date range
+  const filteredExpenses = allExpenses.filter(e => {
+    return e.date >= start && e.date <= end;
+  });
+
+  // Calculate financials
+  let totalRevenue = 0;
+  let totalCOGS = 0;
+  let totalItemsSold = 0;
+  let paymentBreakdown = {};
+  let productStats = {};
+
+  completedOrders.forEach(o => {
+    totalRevenue += Number(o.final_amount) || 0;
+    totalCOGS += Number(o.total_cost) || 0;
+
+    const method = o.payment_method || 'Cash';
+    paymentBreakdown[method] = (paymentBreakdown[method] || 0) + (Number(o.final_amount) || 0);
+
+    (o.items || []).forEach(it => {
+      const qty = Number(it.quantity || it.qty) || 0;
+      const pid = it.productId || it.product_id || it.name;
+      totalItemsSold += qty;
+
+      if (!productStats[pid]) {
+        productStats[pid] = {
+          name: it.name,
+          units: 0,
+          revenue: 0,
+          cost: 0
+        };
+      }
+      productStats[pid].units += qty;
+      productStats[pid].revenue += Number(it.subtotal) || (Number(it.unitPrice || 0) * qty);
+      productStats[pid].cost += Number(it.itemCostTotal) || (Number(it.unitCost || 0) * qty);
+    });
+  });
+
+  totalRevenue = round(totalRevenue);
+  totalCOGS = round(totalCOGS);
+  const grossProfit = round(totalRevenue - totalCOGS);
+
+  let totalExpenses = 0;
+  filteredExpenses.forEach(e => {
+    totalExpenses += Number(e.amount) || 0;
+  });
+  totalExpenses = round(totalExpenses);
+
+  const netProfit = round(grossProfit - totalExpenses);
+  const marginPercent = totalRevenue > 0 ? Math.round((netProfit / totalRevenue) * 100) : 0;
+
+  const topProducts = Object.values(productStats).sort((a, b) => b.units - a.units);
+
+  return `
+    <div>
+      <!-- Page Header -->
+      <div class="page-header-row">
+        <div>
+          <h1 class="page-title">Sales Reports &amp; Analytics</h1>
+          <div class="page-subtitle">Track sales over any custom period, analyze event net profit, and inspect receipts</div>
+        </div>
+      </div>
+
+      <!-- Date Range Filter Card -->
+      <div class="card" style="margin-bottom:20px;padding:14px 18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+          <!-- Quick Preset Pills -->
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+            ${[
+              { id: 'today', label: 'Today' },
+              { id: 'yesterday', label: 'Yesterday' },
+              { id: 'this_week', label: 'This Week' },
+              { id: 'this_month', label: 'This Month' },
+              { id: 'this_year', label: 'This Year' },
+              { id: 'all', label: 'All Time' }
+            ].map(p => `
+              <button type="button" 
+                class="btn btn-sm ${activeRangePreset === p.id ? 'btn-primary' : 'btn-secondary'}" 
+                data-action="set-report-preset" 
+                data-preset="${p.id}"
+                style="border-radius:20px;font-size:0.8rem;padding:4px 12px;">
+                ${p.label}
+              </button>
+            `).join('')}
+          </div>
+
+          <!-- Custom Date Pickers -->
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:0.8rem;color:var(--text-muted);font-weight:600;">Custom Range:</span>
+            <input type="date" id="report-start-date" class="form-input" value="${start}" style="width:auto;padding:3px 8px;font-size:0.82rem;height:30px;">
+            <span style="font-size:0.8rem;color:var(--text-muted);">to</span>
+            <input type="date" id="report-end-date" class="form-input" value="${end}" style="width:auto;padding:3px 8px;font-size:0.82rem;height:30px;">
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-apply-report-dates" style="height:30px;padding:0 12px;font-size:0.8rem;">
+              Filter
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Financial Statement & KPI Dashboard -->
+      <div class="grid-4" style="margin-bottom:20px;">
+        <!-- Total Revenue -->
+        <div class="card stat-card">
+          <div class="stat-card-title">Gross Revenue (${completedOrders.length} orders)</div>
+          <div class="stat-card-value">${formatRM(totalRevenue)}</div>
+          <div class="stat-card-sub">${totalItemsSold} items sold in range</div>
+        </div>
+
+        <!-- Gross Profit -->
+        <div class="card stat-card">
+          <div class="stat-card-title">Gross Profit (after COGS)</div>
+          <div class="stat-card-value">${formatRM(grossProfit)}</div>
+          <div class="stat-card-sub">COGS: ${formatRM(totalCOGS)}</div>
+        </div>
+
+        <!-- Operating Expenses in Range -->
+        <div class="card stat-card">
+          <div class="stat-card-title">Operating Expenses (${filteredExpenses.length} entries)</div>
+          <div class="stat-card-value">${formatRM(totalExpenses)}</div>
+          <div class="stat-card-sub">Stall rental, petrol, logistics</div>
+        </div>
+
+        <!-- Net Stall Profit -->
+        <div class="card stat-card" style="background:var(--bg-secondary);border-color:var(--color-brown);">
+          <div class="stat-card-title" style="color:var(--color-brown-dark);font-weight:700;">Net Profit (Take-Home)</div>
+          <div class="stat-card-value" style="color:var(--color-brown-dark);">${formatRM(netProfit)}</div>
+          <div class="stat-card-sub" style="color:var(--color-brown);font-weight:600;">Net Margin: ${marginPercent}%</div>
+        </div>
+      </div>
+
+      <!-- Event P&L Statement Banner -->
+      <div class="card" style="margin-bottom:24px;padding:14px 18px;background:var(--bg-secondary);border:1px solid var(--border-light);">
+        <div style="font-weight:700;font-size:0.95rem;color:var(--color-brown-dark);margin-bottom:6px;">
+          Event Financial Breakdown: ${label}
+        </div>
+        <div style="font-size:0.84rem;color:var(--text-muted);margin-bottom:12px;line-height:1.45;">
+          This statement calculates your net take-home profit for this specific market stall or timeframe by deducting product material costs and operational expenses (booth rental, petrol, transport, and packaging).
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:12px;text-align:center;">
+          <div style="background:#ffffff;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border-light);">
+            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">Gross Sales</div>
+            <div style="font-size:1.15rem;font-weight:700;color:var(--color-brown);">${formatRM(totalRevenue)}</div>
+          </div>
+          <div style="background:#ffffff;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border-light);">
+            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">- Product Cost (COGS)</div>
+            <div style="font-size:1.15rem;font-weight:700;color:var(--text-muted);">${formatRM(totalCOGS)}</div>
+          </div>
+          <div style="background:#ffffff;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border-light);">
+            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">= Gross Profit</div>
+            <div style="font-size:1.15rem;font-weight:700;color:var(--color-brown);">${formatRM(grossProfit)}</div>
+          </div>
+          <div style="background:#ffffff;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border-light);">
+            <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">- Stall Expenses</div>
+            <div style="font-size:1.15rem;font-weight:700;color:var(--color-brown-dark);">${formatRM(totalExpenses)}</div>
+          </div>
+          <div style="background:var(--color-white);padding:10px;border-radius:var(--radius-sm);border:1px solid var(--color-brown);">
+            <div style="font-size:0.75rem;color:var(--color-brown-dark);font-weight:700;">= Net Stall Profit</div>
+            <div style="font-size:1.2rem;font-weight:800;color:var(--color-brown-dark);">${formatRM(netProfit)}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Report Tabs Navigation -->
+      <div style="display:flex;gap:8px;margin-bottom:18px;border-bottom:1px solid var(--border-light);padding-bottom:10px;">
+        <button type="button" 
+          class="btn btn-sm ${activeReportTab === 'orders' ? 'btn-primary' : 'btn-secondary'}" 
+          data-action="report-tab" 
+          data-tab="orders">
+          <span>All Orders in Range (${filteredOrders.length})</span>
+        </button>
+        <button type="button" 
+          class="btn btn-sm ${activeReportTab === 'products' ? 'btn-primary' : 'btn-secondary'}" 
+          data-action="report-tab" 
+          data-tab="products">
+          <span>Product Performance (${topProducts.length})</span>
+        </button>
+        <button type="button" 
+          class="btn btn-sm ${activeReportTab === 'payments' ? 'btn-primary' : 'btn-secondary'}" 
+          data-action="report-tab" 
+          data-tab="payments">
+          <span>Payment Channels</span>
+        </button>
+      </div>
+
+      <!-- Tab Contents -->
+      ${activeReportTab === 'orders' ? renderOrdersTab(filteredOrders) : ''}
+      ${activeReportTab === 'products' ? renderProductsTab(topProducts) : ''}
+      ${activeReportTab === 'payments' ? renderPaymentsTab(paymentBreakdown, totalRevenue) : ''}
+    </div>
+  `;
+}
+
+function renderOrdersTab(orders) {
+  if (orders.length === 0) {
+    return `
+      <div class="card" style="text-align:center;padding:50px 20px;color:var(--text-muted);">
+        No orders found in the selected date range.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="card">
+      <div class="table-container">
+        <table class="table table--mobile-cards">
+          <thead>
+            <tr>
+              <th>Order Number</th>
+              <th>Date &amp; Time</th>
+              <th>Items Summary</th>
+              <th>Payment</th>
+              <th style="text-align:right;">Final Total</th>
+              <th style="text-align:right;">Profit</th>
+              <th style="text-align:center;">Status</th>
+              <th style="text-align:right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${orders.map(o => {
+              const isCancelled = o.status === 'cancelled';
+              const itemsCount = (o.items || []).reduce((acc, it) => acc + (Number(it.quantity || it.qty) || 0), 0);
+
+              return `
+                <tr style="${isCancelled ? 'opacity:0.6;background:var(--bg-secondary);' : ''}">
+                  <td data-label="Order Number" style="font-family:var(--font-mono);font-weight:700;font-size:0.88rem;">
+                    ${o.order_number}
+                  </td>
+                  <td data-label="Date &amp; Time" style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">
+                    ${formatDateTime(o.timestamp)}
+                  </td>
+                  <td data-label="Items" style="font-size:0.85rem;">
+                    ${itemsCount} item(s) (${(o.items || []).map(i => i.name).slice(0, 2).join(', ')}${(o.items || []).length > 2 ? '...' : ''})
+                  </td>
+                  <td data-label="Payment">
+                    <span class="badge badge-outline">${o.payment_method}</span>
+                  </td>
+                  <td data-label="Total" class="num" style="text-align:right;font-weight:700;color:var(--color-brown);font-size:0.95rem;">
+                    ${formatRM(o.final_amount)}
+                  </td>
+                  <td data-label="Profit" class="num" style="text-align:right;font-weight:700;color:var(--color-brown-dark);font-size:0.92rem;">
+                    ${formatRM(o.gross_profit)}
+                  </td>
+                  <td data-label="Status" style="text-align:center;">
+                    <span class="badge ${isCancelled ? 'badge-cancelled' : 'badge-active'}">${o.status}</span>
+                  </td>
+                  <td data-label="Actions" class="td-actions">
+                    <div style="display:flex;gap:4px;justify-content:flex-end;">
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="inspect-order" data-order-id="${o.id}">
+                        Inspect
+                      </button>
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="open-edit-order-modal" data-order-id="${o.id}">
+                        Edit
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderProductsTab(products) {
+  if (products.length === 0) {
+    return `
+      <div class="card" style="text-align:center;padding:50px 20px;color:var(--text-muted);">
+        No product sales recorded in this date range.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="card">
+      <div class="table-container">
+        <table class="table table--mobile-cards">
+          <thead>
+            <tr>
+              <th style="width:40px;text-align:center;">#</th>
+              <th>Product Name</th>
+              <th style="text-align:right;">Units Sold</th>
+              <th style="text-align:right;">Total Revenue</th>
+              <th style="text-align:right;">Total Cost</th>
+              <th style="text-align:right;">Gross Profit</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${products.map((p, idx) => {
+              const profit = round(p.revenue - p.cost);
+              return `
+                <tr>
+                  <td data-label="#" style="text-align:center;font-weight:700;color:var(--text-muted);">${idx + 1}</td>
+                  <td data-label="Product" style="font-weight:700;color:var(--color-brown-dark);">${p.name}</td>
+                  <td data-label="Units Sold" class="num" style="text-align:right;font-weight:700;font-size:0.95rem;">${p.units}</td>
+                  <td data-label="Revenue" class="num" style="text-align:right;color:var(--color-brown);font-weight:700;">${formatRM(p.revenue)}</td>
+                  <td data-label="Cost" class="num" style="text-align:right;color:var(--text-muted);">${formatRM(p.cost)}</td>
+                  <td data-label="Gross Profit" class="num" style="text-align:right;font-weight:700;color:var(--color-brown-dark);">${formatRM(profit)}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderPaymentsTab(breakdown, total) {
+  const methods = Object.keys(breakdown);
+  if (methods.length === 0) {
+    return `
+      <div class="card" style="text-align:center;padding:50px 20px;color:var(--text-muted);">
+        No payment transactions recorded in this date range.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="card">
+      <div class="table-container">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Payment Channel</th>
+              <th style="text-align:right;">Amount Received</th>
+              <th style="text-align:right;">Share of Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${methods.map(m => {
+              const amt = breakdown[m];
+              const pct = total > 0 ? Math.round((amt / total) * 100) : 0;
+              return `
+                <tr>
+                  <td style="font-weight:700;color:var(--color-brown);">${m}</td>
+                  <td class="num" style="text-align:right;font-weight:700;font-size:1.05rem;">${formatRM(amt)}</td>
+                  <td class="num" style="text-align:right;color:var(--text-muted);font-weight:600;">${pct}%</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
 
 
 // ==========================================
@@ -5060,20 +5629,20 @@ function renderStockTab(products) {
   return `
     <div class="card" style="margin-bottom:24px;">
       <div style="margin-bottom:12px;font-size:0.85rem;color:var(--text-muted);">
-        Total: <strong>${products.length}</strong> items. <strong>Drag ⠿</strong> to adjust stall display sequence.
+        Total: <strong>${products.length}</strong> items. Click headers (<strong>Order</strong>, <strong>Name</strong>, <strong>Stock</strong>, <strong>Cost</strong>) to sort, or <strong>drag ⠿</strong> to adjust sequence.
       </div>
       <div class="table-container">
         <table class="table table--mobile-cards">
           <thead>
             <tr>
-              <th style="width:72px;text-align:center;">Order</th>
-              <th>Product Name</th>
-              <th>Category</th>
+              <th style="width:64px;text-align:center;cursor:pointer;" data-action="sort-inventory-col" data-col="order" title="Sort by Custom Sequence">Order</th>
+              <th style="cursor:pointer;" data-action="sort-inventory-col" data-col="name" title="Click to sort by Product Name">Product Name</th>
+              <th style="cursor:pointer;" data-action="sort-inventory-col" data-col="category" title="Click to sort by Category">Category</th>
               <th>Stock Type</th>
               <th>Recipe / Components</th>
-              <th style="text-align:right;">Physical Stock</th>
-              <th style="text-align:right;">Assemble Capacity</th>
-              <th style="text-align:right;">Unit Cost</th>
+              <th style="text-align:right;cursor:pointer;" data-action="sort-inventory-col" data-col="stock" title="Click to sort by Physical Stock">Physical Stock</th>
+              <th style="text-align:right;cursor:pointer;" data-action="sort-inventory-col" data-col="available" title="Click to sort by Available Stock">Assemble Capacity</th>
+              <th style="text-align:right;cursor:pointer;" data-action="sort-inventory-col" data-col="cost" title="Click to sort by Unit Cost">Unit Cost</th>
               <th style="text-align:right;">Actions</th>
             </tr>
           </thead>
@@ -5245,6 +5814,7 @@ function renderMovementsTab(movements, products) {
  * Expenses Management View Component
  * Record and track stall operating expenses (Stall rental, Transportation, Packaging, Printing, Other)
  * directly subtracted from gross profit to compute net profit.
+ * Supports row editing, column sorting (Date, Name, Amount, Category), and net profit calculation.
  */
 
 
@@ -5253,31 +5823,80 @@ function renderMovementsTab(movements, products) {
 
 
 let expenseCategoryFilter = 'All';
+let expenseSortColumn = 'date'; // 'date' | 'name' | 'amount' | 'category'
+let expenseSortOrder = 'desc'; // 'asc' | 'desc'
 
 function setExpenseCategoryFilter(cat) {
   expenseCategoryFilter = cat;
 }
 
+function toggleExpenseSort(column) {
+  if (expenseSortColumn === column) {
+    expenseSortOrder = expenseSortOrder === 'asc' ? 'desc' : 'asc';
+  } else {
+    expenseSortColumn = column;
+    expenseSortOrder = (column === 'amount' || column === 'date') ? 'desc' : 'asc';
+  }
+}
+
 function renderExpenses() {
   const categories = ['All', ...store.getExpenseCategories()];
-  let expenses = store.expenses || [];
+  let expenses = [...(store.expenses || [])];
 
+  // Category filter
   if (expenseCategoryFilter !== 'All') {
     expenses = expenses.filter(e => e.category === expenseCategoryFilter);
   }
 
+  // Column sorting (Date, Name, Category, Amount)
+  expenses.sort((a, b) => {
+    let comparison = 0;
+    if (expenseSortColumn === 'date') {
+      comparison = (a.date || '').localeCompare(b.date || '');
+    } else if (expenseSortColumn === 'name') {
+      comparison = (a.name || '').localeCompare(b.name || '');
+    } else if (expenseSortColumn === 'category') {
+      comparison = (a.category || '').localeCompare(b.category || '');
+    } else if (expenseSortColumn === 'amount') {
+      comparison = (Number(a.amount) || 0) - (Number(b.amount) || 0);
+    }
+    return expenseSortOrder === 'asc' ? comparison : -comparison;
+  });
+
+  // Calculate total expenses
   let totalFilteredExpenses = 0;
   expenses.forEach(e => {
     totalFilteredExpenses += Number(e.amount) || 0;
   });
   totalFilteredExpenses = round(totalFilteredExpenses);
 
+  // Overall financial summary
+  const allOrders = (store.orders || []).filter(o => o.status !== 'cancelled');
+  let allRevenue = 0;
+  let allCOGS = 0;
+  allOrders.forEach(o => {
+    allRevenue += Number(o.final_amount) || 0;
+    allCOGS += Number(o.total_cost) || 0;
+  });
+  const allGrossProfit = round(allRevenue - allCOGS);
+  let allExpensesSum = 0;
+  (store.expenses || []).forEach(e => {
+    allExpensesSum += Number(e.amount) || 0;
+  });
+  allExpensesSum = round(allExpensesSum);
+  const allNetProfit = round(allGrossProfit - allExpensesSum);
+
+  const sortIndicator = (col) => {
+    if (expenseSortColumn !== col) return '';
+    return expenseSortOrder === 'asc' ? ' ↑' : ' ↓';
+  };
+
   return `
     <div>
       <div class="page-header-row">
         <div>
           <h1 class="page-title">Operating Expenses</h1>
-          <div class="page-subtitle">Track stall rental, logistics, printing, and packaging for net profit calculation</div>
+          <div class="page-subtitle">Track stall rental, petrol/transport, booth gear, and packaging to calculate true net take-home profit</div>
         </div>
         <div style="display:flex;gap:10px;">
           <button type="button" class="btn btn-secondary" data-action="open-manage-expense-categories-modal">
@@ -5291,23 +5910,63 @@ function renderExpenses() {
         </div>
       </div>
 
+      <!-- Financial Statement Banner (Money Spent vs Money Made & Net Profit) -->
+      <div class="card" style="margin-bottom:20px;padding:14px 18px;background:var(--bg-secondary);border:1px solid var(--border-light);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+          <div>
+            <div style="font-weight:700;font-size:0.95rem;color:var(--color-brown-dark);">
+              Stall Financial Overview &amp; Net Take-Home
+            </div>
+            <div style="font-size:0.8rem;color:var(--text-muted);">
+              Net Profit = Total Sales - Product Material Costs - Operating Expenses (Stall rental, petrol, logistics, food)
+            </div>
+          </div>
+          <button type="button" class="btn btn-sm btn-secondary" data-action="switch-view" data-target="salesReports" style="font-size:0.75rem;padding:3px 10px;">
+            Open Detailed Date Range Reports →
+          </button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;text-align:center;">
+          <div style="background:#ffffff;padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--border-light);">
+            <div style="font-size:0.72rem;color:var(--text-muted);font-weight:600;">Total Sales Made</div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--color-brown);">${formatRM(allRevenue)}</div>
+          </div>
+          <div style="background:#ffffff;padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--border-light);">
+            <div style="font-size:0.72rem;color:var(--text-muted);font-weight:600;">- Product Cost (COGS)</div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--text-muted);">${formatRM(allCOGS)}</div>
+          </div>
+          <div style="background:#ffffff;padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--border-light);">
+            <div style="font-size:0.72rem;color:var(--text-muted);font-weight:600;">= Gross Profit</div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--color-brown);">${formatRM(allGrossProfit)}</div>
+          </div>
+          <div style="background:#ffffff;padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--border-light);">
+            <div style="font-size:0.72rem;color:var(--text-muted);font-weight:600;">- Operating Expenses</div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--color-brown-dark);">${formatRM(allExpensesSum)}</div>
+          </div>
+          <div style="background:var(--color-white);padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--color-brown);">
+            <div style="font-size:0.72rem;color:var(--color-brown-dark);font-weight:700;">= Net Profit</div>
+            <div style="font-size:1.15rem;font-weight:800;color:var(--color-brown-dark);">${formatRM(allNetProfit)}</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Category Filter Pills & Summary -->
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
         <div style="display:flex;gap:6px;overflow-x:auto;">
           ${categories.map(cat => `
             <button type="button" 
               class="btn btn-sm ${expenseCategoryFilter === cat ? 'btn-primary' : 'btn-secondary'}" 
               data-action="filter-expense-cat" 
               data-category="${cat}"
-              style="border-radius:20px;">
+              style="border-radius:20px;font-size:0.8rem;">
               ${cat}
             </button>
           `).join('')}
         </div>
 
-        <div class="card" style="padding:10px 18px;display:flex;align-items:center;gap:12px;">
-          <span style="font-size:0.85rem;color:var(--text-muted);">Total Recorded:</span>
-          <span class="num" style="font-size:1.25rem;font-weight:700;color:var(--color-black);">
+        <div class="card" style="padding:8px 16px;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:0.82rem;color:var(--text-muted);">Filtered Expenses:</span>
+          <span class="num" style="font-size:1.15rem;font-weight:700;color:var(--color-brown);">
             ${formatRM(totalFilteredExpenses)}
           </span>
         </div>
@@ -5315,11 +5974,14 @@ function renderExpenses() {
 
       <!-- Expenses Table -->
       <div class="card">
+        <div style="margin-bottom:10px;font-size:0.8rem;color:var(--text-muted);">
+          Click table headers (<strong>Date</strong>, <strong>Expense Name</strong>, <strong>Category</strong>, <strong>Amount</strong>) to sort.
+        </div>
         ${expenses.length === 0 ? `
           <div style="text-align:center;padding:50px 20px;color:var(--text-muted);">
             ${renderIcon('expenses', 36, 'style="opacity:0.3;margin-bottom:12px;"')}
-            <div style="font-weight:600;">No expenses recorded</div>
-            <div style="font-size:0.82rem;margin-top:4px;">Record stall rental, booth equipment, or transport costs</div>
+            <div style="font-weight:600;">No expenses found</div>
+            <div style="font-size:0.82rem;margin-top:4px;">Record booth rental, petrol, parking, or equipment</div>
             <button type="button" class="btn btn-primary btn-sm" style="margin-top:14px;" data-action="open-add-expense-modal">
               Record First Expense
             </button>
@@ -5329,12 +5991,20 @@ function renderExpenses() {
             <table class="table table--mobile-cards">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Expense Name</th>
-                  <th>Category</th>
-                  <th style="text-align:right;">Amount</th>
+                  <th style="cursor:pointer;" data-action="sort-expenses" data-col="date">
+                    Date${sortIndicator('date')}
+                  </th>
+                  <th style="cursor:pointer;" data-action="sort-expenses" data-col="name">
+                    Expense Name${sortIndicator('name')}
+                  </th>
+                  <th style="cursor:pointer;" data-action="sort-expenses" data-col="category">
+                    Category${sortIndicator('category')}
+                  </th>
+                  <th style="cursor:pointer;text-align:right;" data-action="sort-expenses" data-col="amount">
+                    Amount${sortIndicator('amount')}
+                  </th>
                   <th>Notes</th>
-                  <th style="text-align:right;">Action</th>
+                  <th style="text-align:right;">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -5343,7 +6013,7 @@ function renderExpenses() {
                     <td data-label="Date" style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">
                       ${formatDate(exp.date)}
                     </td>
-                    <td data-label="Expense" style="font-weight:700;color:var(--color-black);">${exp.name}</td>
+                    <td data-label="Expense Name" style="font-weight:700;color:var(--color-brown-dark);">${exp.name}</td>
                     <td data-label="Category">
                       <span class="badge badge-outline">${exp.category}</span>
                     </td>
@@ -5353,11 +6023,15 @@ function renderExpenses() {
                     <td data-label="Notes" style="font-size:0.82rem;color:var(--text-muted);">
                       ${exp.notes || '-'}
                     </td>
-                    <td data-label="Action" class="td-actions">
-                      <button type="button" class="btn btn-sm btn-secondary" style="color:var(--color-danger);" data-action="delete-expense" data-expense-id="${exp.id}">
-                        ${renderIcon('trash', 14)}
-                        <span>Delete</span>
-                      </button>
+                    <td data-label="Actions" class="td-actions">
+                      <div style="display:flex;gap:4px;justify-content:flex-end;">
+                        <button type="button" class="btn btn-sm btn-secondary" data-action="open-edit-expense-modal" data-expense-id="${exp.id}">
+                          Edit
+                        </button>
+                        <button type="button" class="btn btn-sm btn-secondary" style="color:var(--text-muted);" data-action="delete-expense" data-expense-id="${exp.id}">
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 `).join('')}
@@ -5369,7 +6043,6 @@ function renderExpenses() {
     </div>
   `;
 }
-
 
 
 // ==========================================
@@ -5441,7 +6114,7 @@ function renderProductList(products) {
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
         <div style="font-size:0.85rem;color:var(--text-muted);">
-          Total: <strong>${products.length}</strong> products. <strong>Drag ⠿</strong> to customize display sequence.
+          Total: <strong>${products.length}</strong> products. Click headers (<strong>Order</strong>, <strong>Name</strong>, <strong>Price</strong>, <strong>Cost</strong>, <strong>Stock</strong>) to sort, or <strong>drag ⠿</strong> to customize sequence.
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <label style="font-size:0.78rem;font-weight:600;color:var(--text-muted);">Sort by:</label>
@@ -5451,6 +6124,8 @@ function renderProductList(products) {
             <option value="category">Category</option>
             <option value="price_desc">Price (High to Low)</option>
             <option value="price_asc">Price (Low to High)</option>
+            <option value="cost_desc">Unit Cost (High to Low)</option>
+            <option value="cost_asc">Unit Cost (Low to High)</option>
             <option value="stock_asc">Stock (Lowest first)</option>
             <option value="stock_desc">Stock (Highest first)</option>
           </select>
@@ -5461,12 +6136,12 @@ function renderProductList(products) {
         <table class="table table--mobile-cards">
           <thead>
             <tr>
-              <th style="width:72px;text-align:center;">Order</th>
-              <th>Product Name</th>
-              <th>Category</th>
-              <th style="text-align:right;">Price</th>
-              <th style="text-align:right;">Unit Cost</th>
-              <th style="text-align:right;">Stock</th>
+              <th style="width:64px;text-align:center;cursor:pointer;" data-action="sort-products-col" data-col="order" title="Sort by Custom Sequence">Order</th>
+              <th style="cursor:pointer;" data-action="sort-products-col" data-col="name" title="Click to sort by Product Name">Product Name</th>
+              <th style="cursor:pointer;" data-action="sort-products-col" data-col="category" title="Click to sort by Category">Category</th>
+              <th style="text-align:right;cursor:pointer;" data-action="sort-products-col" data-col="price" title="Click to sort by Price">Price</th>
+              <th style="text-align:right;cursor:pointer;" data-action="sort-products-col" data-col="cost" title="Click to sort by Unit Cost">Unit Cost</th>
+              <th style="text-align:right;cursor:pointer;" data-action="sort-products-col" data-col="stock" title="Click to sort by Stock">Stock</th>
               <th style="text-align:center;">Type</th>
               <th style="text-align:center;">Status</th>
               <th style="text-align:right;">Actions</th>
@@ -5833,6 +6508,8 @@ function renderBackup() {
 
 
 
+
+
 let currentView = 'pos'; // Mobile-first default to POS or dashboard
 let activeModal = null; // Current open modal identifier and payload
 
@@ -5896,6 +6573,9 @@ function renderApp() {
     case 'dailyRecords':
       mainHtml = renderDailyRecords();
       break;
+    case 'salesReports':
+      mainHtml = renderSalesReports();
+      break;
     case 'inventory':
       mainHtml = renderInventory();
       break;
@@ -5934,10 +6614,11 @@ function renderApp() {
 
 function renderMobileMoreMenu() {
   const menuItems = [
-    { target: 'promotions', icon: 'promotions', label: 'Bundle Promotions',   desc: 'Manage bundle deals & discounts' },
-    { target: 'expenses',   icon: 'expenses',   label: 'Operating Expenses',  desc: 'Record stall running costs' },
-    { target: 'products',   icon: 'products',   label: 'Products & Settings', desc: 'Edit prices, costs & reorder' },
-    { target: 'backup',     icon: 'backup',     label: 'Backup & Sync',       desc: 'GitHub cloud sync & local backup' },
+    { target: 'promotions', icon: 'promotions', label: 'Promotion', desc: 'Manage bundle deals & discounts' },
+    { target: 'expenses',   icon: 'expenses',   label: 'Expenses',  desc: 'Stall running costs & net take-home' },
+    { target: 'inventory',  icon: 'inventory',  label: 'Inventory', desc: 'Physical stock & recipes' },
+    { target: 'products',   icon: 'products',   label: 'Products & Cost Management', desc: 'Prices, costs & reorder' },
+    { target: 'backup',     icon: 'backup',     label: 'Backup & Restore', desc: 'GitHub cloud sync & local backup' },
   ];
 
   return `
@@ -6363,6 +7044,127 @@ function attachEventListeners() {
     btn.addEventListener('click', () => openManageExpenseCategoriesModal());
   });
 
+  // Edit Expense modal trigger
+  appRoot.querySelectorAll('[data-action="open-edit-expense-modal"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const expId = btn.getAttribute('data-expense-id');
+      const exp = await db.getById('expenses', expId);
+      if (exp) openExpenseModal(exp);
+    });
+  });
+
+  // Sort expenses column headers
+  appRoot.querySelectorAll('[data-action="sort-expenses"]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.getAttribute('data-col');
+      if (col) {
+        toggleExpenseSort(col);
+        renderApp();
+      }
+    });
+  });
+
+  // Sort products table headers (Order, Name, Category, Price, Cost, Stock)
+  let sortState = window._prodSortState || { col: '', dir: 'asc' };
+  window._prodSortState = sortState;
+
+  appRoot.querySelectorAll('[data-action="sort-products-col"]').forEach(th => {
+    th.addEventListener('click', async () => {
+      const col = th.getAttribute('data-col');
+      if (col === 'order') {
+        await store.sortProductsBy('custom');
+      } else if (col === 'name') {
+        const dir = sortState.col === 'name' && sortState.dir === 'asc' ? 'desc' : 'asc';
+        sortState = { col: 'name', dir };
+        window._prodSortState = sortState;
+        await store.sortProductsBy(dir === 'asc' ? 'name_asc' : 'name_desc');
+      } else if (col === 'category') {
+        await store.sortProductsBy('category');
+      } else if (col === 'price') {
+        const dir = sortState.col === 'price' && sortState.dir === 'desc' ? 'asc' : 'desc';
+        sortState = { col: 'price', dir };
+        window._prodSortState = sortState;
+        await store.sortProductsBy(dir === 'desc' ? 'price_desc' : 'price_asc');
+      } else if (col === 'cost') {
+        const dir = sortState.col === 'cost' && sortState.dir === 'desc' ? 'asc' : 'desc';
+        sortState = { col: 'cost', dir };
+        window._prodSortState = sortState;
+        await store.sortProductsBy(dir === 'desc' ? 'cost_desc' : 'cost_asc');
+      } else if (col === 'stock') {
+        const dir = sortState.col === 'stock' && sortState.dir === 'desc' ? 'asc' : 'desc';
+        sortState = { col: 'stock', dir };
+        window._prodSortState = sortState;
+        await store.sortProductsBy(dir === 'desc' ? 'stock_desc' : 'stock_asc');
+      }
+      renderApp();
+    });
+  });
+
+  // Sort inventory table headers (Order, Name, Category, Stock, Capacity, Cost)
+  appRoot.querySelectorAll('[data-action="sort-inventory-col"]').forEach(th => {
+    th.addEventListener('click', async () => {
+      const col = th.getAttribute('data-col');
+      if (col === 'order') {
+        await store.sortProductsBy('custom');
+      } else if (col === 'name') {
+        const dir = sortState.col === 'name' && sortState.dir === 'asc' ? 'desc' : 'asc';
+        sortState = { col: 'name', dir };
+        window._prodSortState = sortState;
+        await store.sortProductsBy(dir === 'asc' ? 'name_asc' : 'name_desc');
+      } else if (col === 'category') {
+        await store.sortProductsBy('category');
+      } else if (col === 'stock' || col === 'available') {
+        const dir = sortState.col === 'stock' && sortState.dir === 'desc' ? 'asc' : 'desc';
+        sortState = { col: 'stock', dir };
+        window._prodSortState = sortState;
+        await store.sortProductsBy(dir === 'desc' ? 'stock_desc' : 'stock_asc');
+      } else if (col === 'cost') {
+        const dir = sortState.col === 'cost' && sortState.dir === 'desc' ? 'asc' : 'desc';
+        sortState = { col: 'cost', dir };
+        window._prodSortState = sortState;
+        await store.sortProductsBy(dir === 'desc' ? 'cost_desc' : 'cost_asc');
+      }
+      renderApp();
+    });
+  });
+
+  // Edit receipt / order triggers
+  appRoot.querySelectorAll('[data-action="open-edit-order-modal"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const orderId = btn.getAttribute('data-order-id');
+      const order = await db.getById('orders', orderId);
+      if (order) openEditOrderModal(order);
+    });
+  });
+
+  // Sales Reports Controls
+  appRoot.querySelectorAll('[data-action="set-report-preset"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const preset = btn.getAttribute('data-preset');
+      setReportRangePreset(preset);
+      renderApp();
+    });
+  });
+
+  const applyReportDatesBtn = document.getElementById('btn-apply-report-dates');
+  if (applyReportDatesBtn) {
+    applyReportDatesBtn.addEventListener('click', () => {
+      const s = document.getElementById('report-start-date')?.value;
+      const e = document.getElementById('report-end-date')?.value;
+      if (s && e) {
+        setReportRangePreset('custom', s, e);
+        renderApp();
+      }
+    });
+  }
+
+  appRoot.querySelectorAll('[data-action="report-tab"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setReportTab(btn.getAttribute('data-tab'));
+      renderApp();
+    });
+  });
+
   // --- Promotions Interactions ---
   const createPromoBtn = appRoot.querySelector('[data-action="open-create-promo-modal"]');
   if (createPromoBtn) {
@@ -6718,12 +7520,18 @@ function openOrderInspectModal(order) {
             </div>
           </div>
         </div>
-        <div class="modal-footer">
+        <div class="modal-footer" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
           <button type="button" class="btn btn-danger" id="modal-delete-order-btn">
             ${renderIcon('trash', 16)}
             <span>Delete Order</span>
           </button>
-          <button type="button" class="btn btn-secondary" id="modal-close-footer-btn">Close</button>
+          <div style="display:flex;gap:6px;">
+            <button type="button" class="btn btn-primary" id="modal-inspect-edit-btn">
+              ${renderIcon('edit', 16)}
+              <span>Edit Receipt</span>
+            </button>
+            <button type="button" class="btn btn-secondary" id="modal-close-footer-btn">Close</button>
+          </div>
         </div>
       </div>
     </div>
@@ -6737,6 +7545,14 @@ function openOrderInspectModal(order) {
     deleteOrderBtn.addEventListener('click', () => {
       closeModal();
       openDeleteOrderModal(order);
+    });
+  }
+
+  const editOrderBtn = document.getElementById('modal-inspect-edit-btn');
+  if (editOrderBtn) {
+    editOrderBtn.addEventListener('click', () => {
+      closeModal();
+      openEditOrderModal(order);
     });
   }
 }
@@ -7133,17 +7949,21 @@ function openManageCategoriesModal() {
           <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
         </div>
         <div class="modal-body">
-          <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:14px;">
-            Click × next to a category to delete it, or add new categories below:
+          <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:12px;">
+            Drag the ⠿ handles to rearrange category display order. Click × to delete.
           </p>
 
-          <!-- Current Categories Tags -->
-          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;">
-            ${categories.map(cat => `
-              <div style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-secondary);border:1px solid var(--border-light);padding:5px 12px;border-radius:20px;font-size:0.88rem;font-weight:700;color:var(--color-brown);">
-                <span>${cat}</span>
-                <button type="button" class="btn-delete-cat" data-category="${cat}" title="Delete Category" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.85rem;line-height:1;padding:0 2px;display:flex;align-items:center;">
-                  ${renderIcon('x', 13)}
+          <!-- Draggable Categories List -->
+          <div id="category-reorder-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px;max-height:280px;overflow-y:auto;padding-right:4px;">
+            ${categories.map((cat, idx) => `
+              <div class="draggable-cat-item" draggable="true" data-cat="${cat}" style="display:flex;align-items:center;justify-content:space-between;background:var(--bg-card);border:1px solid var(--border-light);padding:8px 12px;border-radius:var(--radius-sm);cursor:grab;transition:all 0.15s ease;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <span class="cat-drag-handle" style="color:var(--text-muted);cursor:grab;touch-action:none;user-select:none;font-weight:700;font-size:1.1rem;line-height:1;">⠿</span>
+                  <span style="font-size:0.85rem;color:var(--text-muted);width:20px;">${idx + 1}.</span>
+                  <span style="font-size:0.92rem;font-weight:700;color:var(--color-brown);">${cat}</span>
+                </div>
+                <button type="button" class="btn-delete-cat" data-category="${cat}" title="Delete Category" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.85rem;line-height:1;padding:4px 6px;display:flex;align-items:center;">
+                  ${renderIcon('x', 14)}
                 </button>
               </div>
             `).join('')}
@@ -7170,6 +7990,13 @@ function openManageCategoriesModal() {
 
   document.getElementById('modal-close-btn').addEventListener('click', closeModal);
   document.getElementById('modal-close-footer-btn').addEventListener('click', closeModal);
+
+  // Drag and drop category controller
+  setupCategoryDragController('#category-reorder-list', '.draggable-cat-item', '.cat-drag-handle', async (newCats) => {
+    await store.reorderCategories(newCats);
+    showToast('Product category order updated', 'success');
+    openManageCategoriesModal();
+  });
 
   // Add category
   const addBtn = document.getElementById('btn-add-category');
@@ -7652,52 +8479,61 @@ function openQuickCostModal(prod) {
   renderModalContent();
 }
 
-// 7. Add Expense Modal
+// 7. Add & Edit Expense Modal
 function openAddExpenseModal() {
+  openExpenseModal(null);
+}
+
+function openExpenseModal(exp = null) {
   const container = document.getElementById('modal-container');
   if (!container) return;
 
+  const isEdit = !!exp;
   const categories = store.getExpenseCategories();
 
   container.innerHTML = `
     <div class="modal-overlay">
-      <div class="modal-card" style="max-width:440px;">
+      <div class="modal-card" style="max-width:460px;">
         <div class="modal-header">
-          <div class="modal-title">Record Operating Expense</div>
+          <div class="modal-title">${isEdit ? 'Edit Operating Expense' : 'Record Operating Expense'}</div>
           <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
         </div>
         <div class="modal-body">
           <div class="form-group">
             <label class="form-label">Expense Name</label>
-            <input type="text" id="exp-name-input" class="form-input" placeholder="e.g. Market Booth Fee, Grab to Fair, Plastic Bags">
+            <input type="text" id="exp-name-input" class="form-input" value="${exp?.name || ''}" placeholder="e.g. Market Booth Fee, Petrol, Parking, OPP Bags">
           </div>
 
           <div class="grid-2">
             <div class="form-group">
               <label class="form-label">Category</label>
               <select id="exp-cat-select" class="form-select">
-                ${categories.map(c => `<option value="${c}">${c}</option>`).join('')}
+                ${categories.map(c => `
+                  <option value="${c}" ${exp?.category === c ? 'selected' : ''}>${c}</option>
+                `).join('')}
               </select>
             </div>
             <div class="form-group">
               <label class="form-label">Amount (RM)</label>
-              <input type="number" step="0.50" id="exp-amt-input" class="form-input number-input" placeholder="0.00">
+              <input type="number" step="0.50" id="exp-amt-input" class="form-input number-input" value="${exp ? exp.amount : ''}" placeholder="0.00">
             </div>
           </div>
 
           <div class="form-group">
             <label class="form-label">Date</label>
-            <input type="date" id="exp-date-input" class="form-input" value="${getTodayDateString()}">
+            <input type="date" id="exp-date-input" class="form-input" value="${exp?.date || getTodayDateString()}">
           </div>
 
           <div class="form-group">
             <label class="form-label">Notes (Optional)</label>
-            <input type="text" id="exp-notes-input" class="form-input" placeholder="Optional details">
+            <input type="text" id="exp-notes-input" class="form-input" value="${exp?.notes || ''}" placeholder="Optional details (e.g. Weekend market booth #12)">
           </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" id="modal-exp-abort-btn">Cancel</button>
-          <button type="button" class="btn btn-primary" id="modal-exp-save-btn">Record Expense</button>
+          <button type="button" class="btn btn-primary" id="modal-exp-save-btn">
+            ${isEdit ? 'Save Changes' : 'Record Expense'}
+          </button>
         </div>
       </div>
     </div>
@@ -7718,20 +8554,36 @@ function openAddExpenseModal() {
       return;
     }
 
-    const expenseRecord = {
-      id: generateId('exp'),
-      name,
-      category,
-      amount,
-      date,
-      notes,
-      timestamp: new Date().toISOString()
-    };
-
-    await db.addItem('expenses', expenseRecord);
-    await store.refreshAll();
-    showToast(`Recorded expense ${formatRM(amount)}`, 'success');
+    if (isEdit) {
+      const updatedRecord = {
+        ...exp,
+        name,
+        category,
+        amount,
+        date,
+        notes,
+        updated_at: new Date().toISOString()
+      };
+      await db.putItem('expenses', updatedRecord);
+      await store.refreshAll();
+      showToast(`Expense "${name}" updated`, 'success');
+    } else {
+      const expenseRecord = {
+        id: generateId('exp'),
+        name,
+        category,
+        amount,
+        date,
+        notes,
+        created_at: new Date().toISOString(),
+        timestamp: new Date().toISOString()
+      };
+      await db.addItem('expenses', expenseRecord);
+      await store.refreshAll();
+      showToast(`Recorded expense ${formatRM(amount)}`, 'success');
+    }
     closeModal();
+    renderApp();
   });
 }
 
@@ -7753,16 +8605,21 @@ function openManageExpenseCategoriesModal() {
           <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
         </div>
         <div class="modal-body">
-          <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:14px;">
-            Click × next to an expense category to delete it, or add new categories below:
+          <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:12px;">
+            Drag the ⠿ handles to rearrange expense categories. Click × to delete.
           </p>
 
-          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;">
-            ${categories.map(cat => `
-              <div style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-secondary);border:1px solid var(--border-light);padding:5px 12px;border-radius:20px;font-size:0.88rem;font-weight:700;color:var(--color-brown);">
-                <span>${cat}</span>
-                <button type="button" class="btn-delete-exp-cat" data-category="${cat}" title="Delete Category" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.85rem;line-height:1;padding:0 2px;display:flex;align-items:center;">
-                  ${renderIcon('x', 13)}
+          <!-- Draggable Expense Categories List -->
+          <div id="exp-category-reorder-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px;max-height:280px;overflow-y:auto;padding-right:4px;">
+            ${categories.map((cat, idx) => `
+              <div class="draggable-exp-cat-item" draggable="true" data-cat="${cat}" style="display:flex;align-items:center;justify-content:space-between;background:var(--bg-card);border:1px solid var(--border-light);padding:8px 12px;border-radius:var(--radius-sm);cursor:grab;transition:all 0.15s ease;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <span class="exp-cat-drag-handle" style="color:var(--text-muted);cursor:grab;touch-action:none;user-select:none;font-weight:700;font-size:1.1rem;line-height:1;">⠿</span>
+                  <span style="font-size:0.85rem;color:var(--text-muted);width:20px;">${idx + 1}.</span>
+                  <span style="font-size:0.92rem;font-weight:700;color:var(--color-brown);">${cat}</span>
+                </div>
+                <button type="button" class="btn-delete-exp-cat" data-category="${cat}" title="Delete Category" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.85rem;line-height:1;padding:4px 6px;display:flex;align-items:center;">
+                  ${renderIcon('x', 14)}
                 </button>
               </div>
             `).join('')}
@@ -7788,6 +8645,13 @@ function openManageExpenseCategoriesModal() {
 
   document.getElementById('modal-close-btn').addEventListener('click', closeModal);
   document.getElementById('modal-close-footer-btn').addEventListener('click', closeModal);
+
+  // Drag and drop expense category controller
+  setupCategoryDragController('#exp-category-reorder-list', '.draggable-exp-cat-item', '.exp-cat-drag-handle', async (newCats) => {
+    await store.reorderExpenseCategories(newCats);
+    showToast('Expense category order updated', 'success');
+    openManageExpenseCategoriesModal();
+  });
 
   const addBtn = document.getElementById('btn-add-exp-cat');
   const input = document.getElementById('new-exp-cat-input');
@@ -8583,6 +9447,399 @@ function setupDraggableRows() {
       touchDraggedRow = null;
       touchDraggedId = null;
       lastTargetRow = null;
+    });
+  });
+}
+
+
+// 14. Edit Order / Receipt Modal
+function openEditOrderModal(order) {
+  const container = document.getElementById('modal-container');
+  if (!container) return;
+
+  let editItems = JSON.parse(JSON.stringify(order.items || []));
+  let paymentMethod = order.payment_method || 'Cash';
+  let paymentNotes = order.payment_notes || '';
+  let orderTimestamp = order.timestamp || new Date().toISOString();
+  let discount = Number(order.discount) || 0;
+
+  function renderEditModal() {
+    let subtotal = 0;
+    let totalCost = 0;
+    editItems.forEach(it => {
+      const q = Number(it.quantity || it.qty) || 1;
+      const p = Boolean(it.isFreeGift) ? 0 : round(Number(it.unitPrice) || 0);
+      const c = Number(it.unitCost) ?? store.getComputedCost(it.productId);
+      it.subtotal = round(p * q);
+      it.itemCostTotal = round(c * q);
+      subtotal += it.subtotal;
+      totalCost += it.itemCostTotal;
+    });
+
+    const finalAmount = round(Math.max(0, subtotal - discount));
+    const grossProfit = round(finalAmount - totalCost);
+    const availableProducts = store.products.filter(p => p.is_active !== false);
+
+    container.innerHTML = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width:580px;width:95%;">
+          <div class="modal-header">
+            <div>
+              <div class="modal-title">Edit Receipt — ${order.order_number}</div>
+              <div style="font-size:0.8rem;color:var(--text-muted);">Modify items, quantities, prices, payment method, or discount</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
+          </div>
+          <div class="modal-body" style="max-height:75vh;overflow-y:auto;">
+            <!-- Receipt Items Editor -->
+            <div style="margin-bottom:16px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--color-brown);">Receipt Items</span>
+                <button type="button" class="btn btn-sm btn-secondary" id="btn-add-order-item" style="font-size:0.75rem;padding:3px 8px;">
+                  ${renderIcon('plus', 12)}
+                  <span>Add Product</span>
+                </button>
+              </div>
+
+              <div id="edit-order-items-list" style="display:flex;flex-direction:column;gap:8px;">
+                ${editItems.map((item, idx) => `
+                  <div class="order-edit-row" data-idx="${idx}" style="background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 10px;">
+                    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;align-items:center;">
+                      <div>
+                        <div style="font-weight:700;font-size:0.85rem;color:var(--color-brown-dark);">${item.name}</div>
+                        ${item.isFreeGift ? '<span class="badge badge-accent" style="font-size:0.65rem;">Free Gift</span>' : ''}
+                      </div>
+                      <div>
+                        <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Unit Price</label>
+                        <input type="number" step="0.05" class="form-input edit-item-price" value="${item.unitPrice}" style="padding:2px 6px;font-size:0.82rem;height:28px;" ${item.isFreeGift ? 'disabled' : ''}>
+                      </div>
+                      <div>
+                        <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Quantity</label>
+                        <input type="number" step="1" min="1" class="form-input edit-item-qty" value="${item.quantity || item.qty || 1}" style="padding:2px 6px;font-size:0.82rem;height:28px;">
+                      </div>
+                      <div style="text-align:right;">
+                        <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Subtotal</label>
+                        <span class="num edit-item-subtotal" style="font-weight:700;font-size:0.85rem;color:var(--color-brown);line-height:28px;">
+                          ${formatRM(item.subtotal)}
+                        </span>
+                      </div>
+                      <div>
+                        <label style="font-size:0.68rem;visibility:hidden;display:block;">Del</label>
+                        <button type="button" class="btn btn-sm btn-secondary btn-del-order-item" data-idx="${idx}" style="padding:4px 6px;color:var(--text-muted);height:28px;" ${editItems.length <= 1 ? 'disabled' : ''}>
+                          ${renderIcon('trash', 14)}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Add Product Selector Box -->
+            <div id="add-product-box" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px;margin-bottom:14px;">
+              <label class="form-label" style="font-size:0.75rem;">Select Product to Add</label>
+              <div style="display:flex;gap:6px;">
+                <select id="select-add-product" class="form-select" style="font-size:0.85rem;">
+                  ${availableProducts.map(p => `
+                    <option value="${p.id}" data-price="${p.selling_price || 0}" data-name="${p.name}">
+                      ${p.name} (${formatRM(p.selling_price)})
+                    </option>
+                  `).join('')}
+                </select>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-confirm-add-item" style="white-space:nowrap;">
+                  Add
+                </button>
+              </div>
+            </div>
+
+            <!-- Payment & Date Adjustments -->
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">Payment Method</label>
+                <select id="edit-order-payment" class="form-select">
+                  ${['Cash', 'DuitNow QR', "Touch 'n Go", 'Credit/Debit Card', 'Online Transfer', 'Other'].map(m => `
+                    <option value="${m}" ${paymentMethod === m ? 'selected' : ''}>${m}</option>
+                  `).join('')}
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Date &amp; Time</label>
+                <input type="datetime-local" id="edit-order-timestamp" class="form-input" value="${orderTimestamp.slice(0, 16)}">
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">Discount (RM)</label>
+                <input type="number" step="0.50" min="0" id="edit-order-discount" class="form-input number-input" value="${discount}">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Payment / Receipt Notes</label>
+                <input type="text" id="edit-order-notes" class="form-input" value="${paymentNotes}" placeholder="e.g. Paid via TnG eWallet">
+              </div>
+            </div>
+
+            <!-- Live Recalculated Summary -->
+            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;margin-top:10px;">
+              <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:4px;">
+                <span style="color:var(--text-muted);">Items Subtotal:</span>
+                <span class="num font-bold" id="edit-subtotal-val">${formatRM(subtotal)}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:6px;">
+                <span style="color:var(--text-muted);">Discount Applied:</span>
+                <span class="num" id="edit-discount-val">- ${formatRM(discount)}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:1.05rem;font-weight:700;border-top:1px dashed var(--border-light);padding-top:6px;color:var(--color-brown);">
+                <span>Final Paid Amount:</span>
+                <span class="num" id="edit-final-val">${formatRM(finalAmount)}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-top:4px;color:var(--text-muted);">
+                <span>Estimated Gross Profit:</span>
+                <span class="num" id="edit-profit-val">${formatRM(grossProfit)}</span>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="modal-abort-edit-btn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="modal-save-order-btn">Save Receipt Changes</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+    document.getElementById('modal-abort-edit-btn').addEventListener('click', closeModal);
+
+    const addBox = document.getElementById('add-product-box');
+    document.getElementById('btn-add-order-item').addEventListener('click', () => {
+      addBox.style.display = addBox.style.display === 'none' ? 'block' : 'none';
+    });
+
+    document.getElementById('btn-confirm-add-item').addEventListener('click', () => {
+      const select = document.getElementById('select-add-product');
+      const opt = select.options[select.selectedIndex];
+      const pid = select.value;
+      const name = opt.getAttribute('data-name');
+      const price = parseFloat(opt.getAttribute('data-price')) || 0;
+
+      editItems.push({
+        productId: pid,
+        name,
+        quantity: 1,
+        unitPrice: price,
+        unitCost: store.getComputedCost(pid),
+        subtotal: price,
+        itemCostTotal: store.getComputedCost(pid),
+        isFreeGift: false
+      });
+      addBox.style.display = 'none';
+      renderEditModal();
+    });
+
+    container.querySelectorAll('.btn-del-order-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-idx'), 10);
+        editItems.splice(idx, 1);
+        renderEditModal();
+      });
+    });
+
+    container.querySelectorAll('.edit-item-price, .edit-item-qty').forEach(inp => {
+      inp.addEventListener('input', () => {
+        saveRowInputs();
+        updateSummary();
+      });
+    });
+
+    document.getElementById('edit-order-discount').addEventListener('input', (e) => {
+      discount = parseFloat(e.target.value) || 0;
+      updateSummary();
+    });
+
+    function saveRowInputs() {
+      container.querySelectorAll('.order-edit-row').forEach(row => {
+        const idx = parseInt(row.getAttribute('data-idx'), 10);
+        if (editItems[idx]) {
+          const p = parseFloat(row.querySelector('.edit-item-price')?.value) || 0;
+          const q = parseInt(row.querySelector('.edit-item-qty')?.value, 10) || 1;
+          editItems[idx].unitPrice = editItems[idx].isFreeGift ? 0 : p;
+          editItems[idx].quantity = q;
+          editItems[idx].subtotal = round(editItems[idx].unitPrice * q);
+          const stEl = row.querySelector('.edit-item-subtotal');
+          if (stEl) stEl.textContent = formatRM(editItems[idx].subtotal);
+        }
+      });
+    }
+
+    function updateSummary() {
+      let sub = 0;
+      let cost = 0;
+      editItems.forEach(it => {
+        sub += it.subtotal || 0;
+        cost += (it.unitCost || 0) * (it.quantity || 1);
+      });
+      const fin = round(Math.max(0, sub - discount));
+      const prof = round(fin - cost);
+
+      const subEl = document.getElementById('edit-subtotal-val');
+      const disEl = document.getElementById('edit-discount-val');
+      const finEl = document.getElementById('edit-final-val');
+      const profEl = document.getElementById('edit-profit-val');
+      if (subEl) subEl.textContent = formatRM(sub);
+      if (disEl) disEl.textContent = `- ${formatRM(discount)}`;
+      if (finEl) finEl.textContent = formatRM(fin);
+      if (profEl) profEl.textContent = formatRM(prof);
+    }
+
+    document.getElementById('modal-save-order-btn').addEventListener('click', async () => {
+      saveRowInputs();
+      const pMethod = document.getElementById('edit-order-payment').value;
+      const pNotes = document.getElementById('edit-order-notes').value.trim();
+      const dtVal = document.getElementById('edit-order-timestamp').value;
+      const finalTimestamp = dtVal ? new Date(dtVal).toISOString() : order.timestamp;
+
+      try {
+        await updateOrder(order.id, {
+          paymentMethod: pMethod,
+          paymentNotes: pNotes,
+          timestamp: finalTimestamp,
+          discount,
+          items: editItems
+        });
+        showToast(`Receipt ${order.order_number} updated successfully!`, 'success');
+        closeModal();
+        renderApp();
+      } catch (err) {
+        alert(`Failed to update receipt: ${err.message}`);
+      }
+    });
+  }
+
+  renderEditModal();
+}
+
+// 15. Category Drag & Drop Reorder Helper
+function setupCategoryDragController(containerSelector, itemClass, handleClass, saveCallback) {
+  const container = document.querySelector(containerSelector);
+  if (!container) return;
+
+  const items = Array.from(container.querySelectorAll(itemClass));
+  let draggedItem = null;
+
+  items.forEach(item => {
+    item.addEventListener('dragstart', (e) => {
+      draggedItem = item;
+      item.classList.add('is-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', item.getAttribute('data-cat'));
+    });
+
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = item.getBoundingClientRect();
+      const isTop = (e.clientY - rect.top) < (rect.height / 2);
+      if (isTop) {
+        item.classList.add('drag-over-top');
+        item.classList.remove('drag-over-bottom');
+      } else {
+        item.classList.add('drag-over-bottom');
+        item.classList.remove('drag-over-top');
+      }
+    });
+
+    item.addEventListener('dragleave', () => {
+      item.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+
+    item.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      const targetCat = item.getAttribute('data-cat');
+      const draggedCat = draggedItem?.getAttribute('data-cat');
+      const isTop = item.classList.contains('drag-over-top');
+      items.forEach(i => i.classList.remove('drag-over-top', 'drag-over-bottom', 'is-dragging'));
+
+      if (!draggedCat || draggedCat === targetCat) return;
+
+      const currentCats = Array.from(container.querySelectorAll(itemClass)).map(i => i.getAttribute('data-cat'));
+      const fromIdx = currentCats.indexOf(draggedCat);
+      if (fromIdx < 0) return;
+      currentCats.splice(fromIdx, 1);
+      let toIdx = currentCats.indexOf(targetCat);
+      if (!isTop) toIdx += 1;
+      currentCats.splice(toIdx, 0, draggedCat);
+
+      await saveCallback(currentCats);
+    });
+
+    item.addEventListener('dragend', () => {
+      items.forEach(i => i.classList.remove('is-dragging', 'drag-over-top', 'drag-over-bottom'));
+      draggedItem = null;
+    });
+  });
+
+  // Touch drag for mobile Safari
+  const handles = container.querySelectorAll(handleClass);
+  let touchDraggedItem = null;
+  let lastTarget = null;
+
+  handles.forEach(handle => {
+    handle.addEventListener('touchstart', (e) => {
+      touchDraggedItem = handle.closest(itemClass);
+      if (!touchDraggedItem) return;
+      touchDraggedItem.classList.add('is-dragging');
+    }, { passive: true });
+
+    handle.addEventListener('touchmove', (e) => {
+      if (!touchDraggedItem) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+      const target = elem ? elem.closest(itemClass) : null;
+
+      if (target && target !== touchDraggedItem) {
+        if (lastTarget && lastTarget !== target) {
+          lastTarget.classList.remove('drag-over-top', 'drag-over-bottom');
+        }
+        lastTarget = target;
+        const rect = target.getBoundingClientRect();
+        const isTop = (touch.clientY - rect.top) < (rect.height / 2);
+        if (isTop) {
+          target.classList.add('drag-over-top');
+          target.classList.remove('drag-over-bottom');
+        } else {
+          target.classList.add('drag-over-bottom');
+          target.classList.remove('drag-over-top');
+        }
+      } else if (lastTarget) {
+        lastTarget.classList.remove('drag-over-top', 'drag-over-bottom');
+        lastTarget = null;
+      }
+    }, { passive: false });
+
+    handle.addEventListener('touchend', async () => {
+      if (!touchDraggedItem) return;
+      touchDraggedItem.classList.remove('is-dragging');
+
+      if (lastTarget && lastTarget !== touchDraggedItem) {
+        const targetCat = lastTarget.getAttribute('data-cat');
+        const draggedCat = touchDraggedItem.getAttribute('data-cat');
+        const isTop = lastTarget.classList.contains('drag-over-top');
+        lastTarget.classList.remove('drag-over-top', 'drag-over-bottom');
+
+        const currentCats = Array.from(container.querySelectorAll(itemClass)).map(i => i.getAttribute('data-cat'));
+        const fromIdx = currentCats.indexOf(draggedCat);
+        if (fromIdx >= 0) {
+          currentCats.splice(fromIdx, 1);
+          let toIdx = currentCats.indexOf(targetCat);
+          if (!isTop) toIdx += 1;
+          currentCats.splice(toIdx, 0, draggedCat);
+          await saveCallback(currentCats);
+        }
+      }
+
+      touchDraggedItem = null;
+      lastTarget = null;
     });
   });
 }
