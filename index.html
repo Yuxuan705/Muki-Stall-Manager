@@ -1068,6 +1068,61 @@ h1.page-title {
   }
 }
 
+/* Drag and Drop Product Ordering (Desktop & Mobile Touch) */
+.draggable-product-row {
+  transition: background-color 0.15s ease;
+}
+.draggable-product-row.is-dragging {
+  opacity: 0.45 !important;
+  background-color: #fef3c7 !important;
+}
+.draggable-product-row.drag-over-top {
+  border-top: 3px solid var(--color-brown) !important;
+}
+.draggable-product-row.drag-over-bottom {
+  border-bottom: 3px solid var(--color-brown) !important;
+}
+.drag-handle {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  transition: all 0.15s ease;
+}
+.drag-handle:hover, .drag-handle:active {
+  cursor: grabbing;
+  color: var(--color-brown-dark);
+  background: #fde68a;
+  border-color: var(--color-brown);
+  transform: scale(1.08);
+}
+.touch-drag-indicator {
+  position: fixed;
+  z-index: 99999;
+  pointer-events: none;
+  padding: 8px 16px;
+  background: var(--color-brown-dark);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
   </style>
 </head>
 <body>
@@ -2010,6 +2065,22 @@ class AppStore {
     await this.refreshAll();
   }
 
+  async reorderProducts(reorderedProductIds) {
+    if (!Array.isArray(reorderedProductIds) || reorderedProductIds.length === 0) return;
+
+    for (let i = 0; i < reorderedProductIds.length; i++) {
+      const id = reorderedProductIds[i];
+      const prod = this.products.find(p => p.id === id);
+      if (prod) {
+        prod.sort_order = i + 1;
+        await db.putItem('products', prod);
+      }
+    }
+
+    this.products.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    await this.refreshAll();
+  }
+
   async sortProductsBy(criteria) {
     let sorted = [...this.products];
     if (criteria === 'name_asc') {
@@ -2390,6 +2461,103 @@ async function saveRecipe(parentProductId, components) {
   await store.refreshAll();
 }
 
+
+/**
+ * Manage Stall Display Samples (摆摊展示样品管理)
+ * Actions:
+ * - 'take_for_display': Move quantity from sellable stock to display_stock
+ * - 'return_to_stock': Return display_stock back to sellable stock
+ * - 'scrap_display': Discard worn/damaged display sample, optionally record loss to Expenses
+ */
+async function manageDisplaySample({ productId, action, quantity = 1, notes = '', recordAsExpense = true }) {
+  const product = await db.getById('products', productId);
+  if (!product) throw new Error('Product not found.');
+
+  const timestamp = new Date().toISOString();
+  const currentSellable = Number(product.stock) || 0;
+  const currentDisplay = Number(product.display_stock) || 0;
+  const numQty = Math.max(1, parseInt(quantity, 10) || 1);
+  const unitCost = Number(product.cost) || 0;
+
+  if (action === 'take_for_display') {
+    if (currentSellable < numQty) {
+      throw new Error(`Cannot set aside ${numQty} for display: only ${currentSellable} in sellable stock.`);
+    }
+    product.stock = currentSellable - numQty;
+    product.display_stock = currentDisplay + numQty;
+    product.updated_at = timestamp;
+    await db.putItem('products', product);
+
+    await db.addItem('stock_movements', {
+      id: generateId('smov'),
+      product_id: productId,
+      product_name: product.name,
+      delta: -numQty,
+      previous_stock: currentSellable,
+      new_stock: product.stock,
+      reason: 'display_take',
+      notes: notes ? `${notes} (Set aside ${numQty} for stall display)` : `Moved ${numQty} unit(s) to stall display sample (展品摆样)`,
+      timestamp
+    });
+  } else if (action === 'return_to_stock') {
+    if (currentDisplay < numQty) {
+      throw new Error(`Cannot return ${numQty} from display: only ${currentDisplay} on display.`);
+    }
+    product.stock = currentSellable + numQty;
+    product.display_stock = currentDisplay - numQty;
+    product.updated_at = timestamp;
+    await db.putItem('products', product);
+
+    await db.addItem('stock_movements', {
+      id: generateId('smov'),
+      product_id: productId,
+      product_name: product.name,
+      delta: +numQty,
+      previous_stock: currentSellable,
+      new_stock: product.stock,
+      reason: 'display_return',
+      notes: notes ? `${notes} (Returned ${numQty} display sample to stock)` : `Returned ${numQty} display sample(s) back to sellable stock (收回展品)`,
+      timestamp
+    });
+  } else if (action === 'scrap_display') {
+    if (currentDisplay < numQty) {
+      throw new Error(`Cannot scrap ${numQty} from display: only ${currentDisplay} on display.`);
+    }
+    product.display_stock = currentDisplay - numQty;
+    product.updated_at = timestamp;
+    await db.putItem('products', product);
+
+    const loss = Math.round(numQty * unitCost * 100) / 100;
+    if (recordAsExpense && loss > 0) {
+      const today = new Date().toISOString().split('T')[0];
+      await db.addItem('expenses', {
+        id: generateId('exp'),
+        date: today,
+        name: `Display Scrapped: ${numQty}x ${product.name} (样品报废)`,
+        category: 'Defect & Wastage',
+        amount: loss,
+        notes: notes ? `${notes} (Display sample retired @ RM${unitCost.toFixed(2)}/ea)` : `Display sample worn out / retired (-${numQty} pcs)`,
+        created_at: timestamp
+      });
+    }
+
+    await db.addItem('stock_movements', {
+      id: generateId('smov'),
+      product_id: productId,
+      product_name: product.name,
+      delta: 0,
+      previous_stock: currentSellable,
+      new_stock: currentSellable,
+      loss_amount: loss,
+      reason: 'display_scrapped',
+      notes: notes ? `${notes} (Display sample scrapped, Loss RM${loss.toFixed(2)})` : `Scrapped ${numQty} worn display sample(s) (Loss: RM ${loss.toFixed(2)})`,
+      timestamp
+    });
+  }
+
+  await store.refreshAll();
+  return product;
+}
 
 
 // ==========================================
@@ -4056,8 +4224,10 @@ function renderPos() {
                   </div>
                   
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:0.75rem;">
-                    <span style="color:${isOut ? 'var(--color-danger)' : available <= 5 ? 'var(--color-orange)' : 'var(--text-muted)'};font-weight:600;">
-                      ${isOut ? 'Out of stock' : `${available} in stock`}
+                    <span style="color:${isOut ? (prod.display_stock > 0 ? '#0284c7' : 'var(--color-danger)') : available <= 5 ? 'var(--color-orange)' : 'var(--text-muted)'};font-weight:600;">
+                      ${isOut 
+                        ? (prod.display_stock > 0 ? `0 for sale (👁️ ${prod.display_stock} Display)` : 'Out of stock') 
+                        : `${available} in stock${prod.display_stock > 0 ? ` (+${prod.display_stock} 👁️)` : ''}`}
                     </span>
                     ${cartQty > 0 ? `
                       <span class="badge" style="background:var(--color-brown);color:white;padding:2px 7px;">
@@ -4847,6 +5017,10 @@ function renderInventory() {
           <div class="page-subtitle">Track physical coin stock, bundle assembly recipes, and inventory movements</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-secondary" data-action="open-manage-display-modal" style="color:#0369a1;border-color:#bae6fd;background:#f0f9ff;font-weight:700;">
+            ${renderIcon('package', 16)}
+            <span>Display Samples / 展品样板</span>
+          </button>
           <button type="button" class="btn btn-secondary" data-action="open-record-defect-modal" style="color:var(--color-danger);border-color:#fca5a5;background:#ffffff;font-weight:700;">
             ${renderIcon('alert', 16)}
             <span>Record Defect / 制作损耗</span>
@@ -4884,6 +5058,9 @@ function renderInventory() {
 function renderStockTab(products) {
   return `
     <div class="card" style="margin-bottom:24px;">
+      <div style="margin-bottom:12px;font-size:0.85rem;color:var(--text-muted);">
+        Total: <strong>${products.length}</strong> items. <strong>Drag ⠿</strong> or use <strong>▲/▼</strong> to adjust stall display sequence.
+      </div>
       <div class="table-container">
         <table class="table table--mobile-cards">
           <thead>
@@ -4908,12 +5085,13 @@ function renderStockTab(products) {
               const computedCost = store.getComputedCost(prod.id);
 
               return `
-                <tr>
+                <tr class="draggable-product-row" draggable="true" data-product-id="${prod.id}" data-product-name="${(prod.name || '').replace(/"/g, '&quot;')}" data-idx="${idx}">
                   <td data-label="Order" style="text-align:center;white-space:nowrap;">
                     <div style="display:inline-flex;align-items:center;gap:4px;">
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${prod.id}" data-dir="up" title="Move Up" style="padding:2px 7px;font-size:0.75rem;line-height:1;" ${idx === 0 ? 'disabled' : ''}>▲</button>
-                      <span style="font-size:0.82rem;font-weight:700;color:var(--text-muted);min-width:20px;text-align:center;">${idx + 1}</span>
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${prod.id}" data-dir="down" title="Move Down" style="padding:2px 7px;font-size:0.75rem;line-height:1;" ${idx === products.length - 1 ? 'disabled' : ''}>▼</button>
+                      <span class="drag-handle" title="Drag to reorder / 拖拽排序" data-product-id="${prod.id}" data-idx="${idx}">⠿</span>
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${prod.id}" data-dir="up" title="Move Up" style="padding:2px 6px;font-size:0.72rem;line-height:1;" ${idx === 0 ? 'disabled' : ''}>▲</button>
+                      <span style="font-size:0.82rem;font-weight:700;color:var(--text-muted);min-width:18px;text-align:center;">${idx + 1}</span>
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${prod.id}" data-dir="down" title="Move Down" style="padding:2px 6px;font-size:0.72rem;line-height:1;" ${idx === products.length - 1 ? 'disabled' : ''}>▼</button>
                     </div>
                   </td>
                   <td data-label="Product" style="font-weight:700;font-size:0.95rem;">
@@ -4933,7 +5111,10 @@ function renderStockTab(products) {
                     }).join('') : '<span style="color:var(--text-light);">Direct physical item</span>'}
                   </td>
                   <td data-label="Physical Stock" class="num" style="text-align:right;font-weight:600;font-size:0.95rem;">
-                    ${isBundle ? '<span style="color:var(--text-light);font-weight:normal;">Auto-assembled</span>' : directStock}
+                    <div>${isBundle ? '<span style="color:var(--text-light);font-weight:normal;">Auto-assembled</span>' : directStock}</div>
+                    ${!isBundle && (prod.display_stock > 0) ? `
+                      <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:0.65rem;font-weight:700;margin-top:2px;display:inline-block;" title="Stall Display Sample">👁️ ${prod.display_stock} Display</span>
+                    ` : ''}
                   </td>
                   <td data-label="Available" class="num" style="text-align:right;font-weight:700;font-size:1.05rem;color:${available <= 5 ? 'var(--color-danger)' : 'var(--color-brown);'};">
                     ${available} <span style="font-size:0.75rem;font-weight:normal;color:var(--text-muted);">${isBundle ? 'sets' : 'units'}</span>
@@ -4943,9 +5124,14 @@ function renderStockTab(products) {
                   </td>
                   <td data-label="Action" class="td-actions">
                     ${!isBundle ? `
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="quick-adjust-stock" data-product-id="${prod.id}" style="width:100%;">
-                        Adjust Stock
-                      </button>
+                      <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">
+                        <button type="button" class="btn btn-sm btn-secondary" data-action="open-manage-display-modal" data-product-id="${prod.id}" style="color:#0369a1;border-color:#bae6fd;padding:2px 7px;font-size:0.75rem;" title="Manage Stall Display Samples">
+                          👁️ Display (${prod.display_stock || 0})
+                        </button>
+                        <button type="button" class="btn btn-sm btn-secondary" data-action="quick-adjust-stock" data-product-id="${prod.id}" style="padding:2px 7px;font-size:0.75rem;">
+                          Stock
+                        </button>
+                      </div>
                     ` : `
                       <button type="button" class="btn btn-sm btn-secondary" data-action="edit-recipe" data-product-id="${prod.id}" style="width:100%;">
                         Edit Recipe
@@ -5256,7 +5442,7 @@ function renderProductList(products) {
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
         <div style="font-size:0.85rem;color:var(--text-muted);">
-          Total: <strong>${products.length}</strong> products. Use <strong>▲/▼</strong> to set your custom display sequence.
+          Total: <strong>${products.length}</strong> products. <strong>Drag ⠿</strong> or use <strong>▲/▼</strong> to customize display order.
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <label style="font-size:0.78rem;font-weight:600;color:var(--text-muted);">Sort by:</label>
@@ -5293,12 +5479,13 @@ function renderProductList(products) {
               const computedCost = store.getComputedCost(p.id);
 
               return `
-                <tr style="${!p.is_active ? 'opacity:0.55;background:#fafafa;' : ''}">
+                <tr class="draggable-product-row" draggable="true" data-product-id="${p.id}" data-product-name="${(p.name || '').replace(/"/g, '&quot;')}" data-idx="${idx}" style="${!p.is_active ? 'opacity:0.55;background:#fafafa;' : ''}">
                   <td data-label="Order" style="text-align:center;white-space:nowrap;">
                     <div style="display:inline-flex;align-items:center;gap:4px;">
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${p.id}" data-dir="up" title="Move Up" style="padding:2px 7px;font-size:0.75rem;line-height:1;" ${idx === 0 ? 'disabled' : ''}>▲</button>
-                      <span style="font-size:0.82rem;font-weight:700;color:var(--text-muted);min-width:20px;text-align:center;">${idx + 1}</span>
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${p.id}" data-dir="down" title="Move Down" style="padding:2px 7px;font-size:0.75rem;line-height:1;" ${idx === products.length - 1 ? 'disabled' : ''}>▼</button>
+                      <span class="drag-handle" title="Drag to reorder / 拖拽排序" data-product-id="${p.id}" data-idx="${idx}">⠿</span>
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${p.id}" data-dir="up" title="Move Up" style="padding:2px 6px;font-size:0.72rem;line-height:1;" ${idx === 0 ? 'disabled' : ''}>▲</button>
+                      <span style="font-size:0.82rem;font-weight:700;color:var(--text-muted);min-width:18px;text-align:center;">${idx + 1}</span>
+                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${p.id}" data-dir="down" title="Move Down" style="padding:2px 6px;font-size:0.72rem;line-height:1;" ${idx === products.length - 1 ? 'disabled' : ''}>▼</button>
                     </div>
                   </td>
                   <td data-label="Product" style="font-weight:700;font-size:0.95rem;">
@@ -5324,6 +5511,9 @@ function renderProductList(products) {
                   </td>
                   <td data-label="Stock" class="num" style="text-align:right;font-weight:600;">
                     ${isBundle ? '<span style="color:var(--text-light);font-size:0.8rem;">(Formula)</span>' : (Number(p.stock) || 0)}
+                    ${!isBundle && (p.display_stock > 0) ? `
+                      <div><span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:0.65rem;font-weight:700;padding:1px 5px;margin-top:2px;display:inline-block;" title="Stall Display Sample">👁️ ${p.display_stock} Display</span></div>
+                    ` : ''}
                   </td>
                   <td data-label="Type" style="text-align:center;">
                     ${isBundle 
@@ -6154,6 +6344,17 @@ function attachEventListeners() {
       const dir = btn.getAttribute('data-dir');
       await store.moveProduct(prodId, dir);
       renderApp();
+    });
+  });
+
+  // Enable drag-and-drop reordering for desktop & mobile touch
+  setupDraggableRows();
+
+  // Stall display samples management modal trigger
+  appRoot.querySelectorAll('[data-action="open-manage-display-modal"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const prodId = btn.getAttribute('data-product-id') || '';
+      openManageDisplayModal(prodId);
     });
   });
 
@@ -7061,9 +7262,15 @@ function openProductModal(prod = null) {
             </div>
           </div>
 
-          <div class="form-group" id="prod-stock-group" style="${prod?.is_bundle ? 'display:none;' : ''}">
-            <label class="form-label">Initial Physical Stock</label>
-            <input type="number" id="prod-stock-input" class="form-input number-input" value="${prod ? prod.stock : 0}">
+          <div class="grid-2" id="prod-stock-group" style="${prod?.is_bundle ? 'display:none;' : ''}">
+            <div class="form-group">
+              <label class="form-label">Sellable Stock (可售现货)</label>
+              <input type="number" id="prod-stock-input" class="form-input number-input" value="${prod ? (prod.stock ?? 0) : 0}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Display Sample (摊位展品)</label>
+              <input type="number" id="prod-display-stock-input" class="form-input number-input" value="${prod ? (prod.display_stock ?? 0) : 0}">
+            </div>
           </div>
 
           <div class="form-group">
@@ -7102,20 +7309,26 @@ function openProductModal(prod = null) {
     const sellingPrice = round(parseFloat(document.getElementById('prod-price-input').value) || 0);
     const cost = round(parseFloat(document.getElementById('prod-cost-input').value) || 0);
     const stock = isBundle ? 0 : parseInt(document.getElementById('prod-stock-input').value, 10) || 0;
+    const displayStock = isBundle ? 0 : Math.max(0, parseInt(document.getElementById('prod-display-stock-input')?.value, 10) || 0);
     const desc = document.getElementById('prod-desc-input').value.trim();
 
     const timestamp = new Date().toISOString();
     const productRecord = {
+      ...(prod || {}),
       id: prod ? prod.id : generateId('prod'),
       name,
       category,
       selling_price: sellingPrice,
       cost,
       stock,
+      sort_order: (prod && typeof prod.sort_order === 'number') ? prod.sort_order : (store.products.length + 1),
       is_bundle: isBundle,
       is_active: prod ? prod.is_active : true,
       description: desc,
       needs_config: false,
+      cost_breakdown: prod ? (prod.cost_breakdown || []) : [],
+      cost_notes: prod ? (prod.cost_notes || '') : '',
+      display_stock: displayStock,
       created_at: prod ? prod.created_at : timestamp,
       updated_at: timestamp
     };
@@ -7931,6 +8144,349 @@ if (document.readyState === 'loading') {
 }
 
 
+
+
+// 12. Stall Display Samples Management Modal (摆摊展品样板管理)
+function openManageDisplayModal(preselectedProductId = '') {
+  const container = document.getElementById('modal-container');
+  if (!container) return;
+
+  const physicalProducts = store.products.filter(p => !store.isBundleProduct(p.id));
+  if (physicalProducts.length === 0) {
+    showToast('No physical products available for display sample management.', 'warning');
+    return;
+  }
+
+  let selectedProdId = preselectedProductId && physicalProducts.some(p => p.id === preselectedProductId)
+    ? preselectedProductId
+    : physicalProducts[0].id;
+
+  function renderModal() {
+    const prod = store.products.find(p => p.id === selectedProdId) || physicalProducts[0];
+    const sellable = Number(prod.stock) || 0;
+    const onDisplay = Number(prod.display_stock) || 0;
+    const unitCost = Number(prod.cost) || 0;
+
+    container.innerHTML = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width:520px;">
+          <div class="modal-header">
+            <div class="modal-title">Stall Display Samples / 摊位展品管理</div>
+            <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
+          </div>
+          <div class="modal-body">
+            <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:14px;line-height:1.4;">
+              Distinguish table display samples (摆摊样品/试用品) from sellable stock. Scrapped display units can automatically be recorded as operational defect loss.
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Select Product</label>
+              <select id="display-prod-select" class="form-select">
+                ${physicalProducts.map(p => `
+                  <option value="${p.id}" ${p.id === prod.id ? 'selected' : ''}>
+                    ${p.name} (Sellable: ${p.stock || 0} | Display: ${p.display_stock || 0})
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+
+            <!-- Current Stock Stats -->
+            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;margin-bottom:16px;">
+              <div style="display:flex;justify-content:space-around;text-align:center;">
+                <div>
+                  <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">Sellable Stock (可售现货)</div>
+                  <div style="font-size:1.35rem;font-weight:700;color:var(--color-brown);">${sellable}</div>
+                </div>
+                <div style="border-right:1px solid var(--border-light);"></div>
+                <div>
+                  <div style="font-size:0.75rem;color:#0369a1;font-weight:600;">Stall Display (当前展品)</div>
+                  <div style="font-size:1.35rem;font-weight:700;color:#0369a1;">${onDisplay}</div>
+                </div>
+                <div style="border-right:1px solid var(--border-light);"></div>
+                <div>
+                  <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">Unit Cost (成本)</div>
+                  <div style="font-size:1.1rem;font-weight:700;color:var(--text-main);">${formatRM(unitCost)}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Action / 选择操作</label>
+              <div style="display:flex;flex-direction:column;gap:8px;">
+                <label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);cursor:pointer;background:#ffffff;">
+                  <input type="radio" name="display-action" value="take_for_display" checked style="margin-top:3px;">
+                  <div>
+                    <div style="font-weight:700;font-size:0.88rem;color:var(--color-brown);">📌 Take from Stock to Display (拿去摆样)</div>
+                    <div style="font-size:0.78rem;color:var(--text-muted);">Move units from sellable stock to table display tester (Sellable → Display)</div>
+                  </div>
+                </label>
+
+                <label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);cursor:pointer;background:#ffffff;">
+                  <input type="radio" name="display-action" value="return_to_stock" style="margin-top:3px;">
+                  <div>
+                    <div style="font-weight:700;font-size:0.88rem;color:#0369a1;">📦 Return Display to Stock (展品收回入库)</div>
+                    <div style="font-size:0.78rem;color:var(--text-muted);">Return table tester back to sellable inventory (Display → Sellable)</div>
+                  </div>
+                </label>
+
+                <label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);cursor:pointer;background:#ffffff;">
+                  <input type="radio" name="display-action" value="scrap_display" style="margin-top:3px;">
+                  <div>
+                    <div style="font-weight:700;font-size:0.88rem;color:var(--color-danger);">⚠️ Scrap Worn Display (展品老化/损坏报废)</div>
+                    <div style="font-size:0.78rem;color:var(--text-muted);">Discard worn display sample & record financial loss to Expenses</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">Quantity</label>
+                <input type="number" id="display-qty-input" class="form-input number-input" value="1" min="1" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Notes (Optional)</label>
+                <input type="text" id="display-notes-input" class="form-input" placeholder="e.g. Market table display">
+              </div>
+            </div>
+
+            <div id="scrap-expense-container" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-sm);padding:10px;margin-top:8px;">
+              <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;font-weight:600;color:var(--color-danger);cursor:pointer;">
+                <input type="checkbox" id="display-record-expense-chk" checked>
+                <span>Record loss <strong id="scrap-loss-amount-text">RM 0.00</strong> to Expenses (Defect & Wastage)</span>
+              </label>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="modal-abort-btn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="modal-submit-display-btn">Confirm Transfer</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+    document.getElementById('modal-abort-btn').addEventListener('click', closeModal);
+
+    const prodSelect = document.getElementById('display-prod-select');
+    prodSelect.addEventListener('change', (e) => {
+      selectedProdId = e.target.value;
+      renderModal();
+    });
+
+    const actionRadios = container.querySelectorAll('input[name="display-action"]');
+    const scrapContainer = document.getElementById('scrap-expense-container');
+    const qtyInput = document.getElementById('display-qty-input');
+    const lossText = document.getElementById('scrap-loss-amount-text');
+
+    function updateLoss() {
+      const q = Math.max(1, parseInt(qtyInput.value, 10) || 1);
+      const loss = q * unitCost;
+      lossText.textContent = formatRM(loss);
+    }
+
+    actionRadios.forEach(r => {
+      r.addEventListener('change', () => {
+        scrapContainer.style.display = r.value === 'scrap_display' ? 'block' : 'none';
+        updateLoss();
+      });
+    });
+
+    qtyInput.addEventListener('input', updateLoss);
+
+    document.getElementById('modal-submit-display-btn').addEventListener('click', async () => {
+      const action = container.querySelector('input[name="display-action"]:checked').value;
+      const quantity = Math.max(1, parseInt(qtyInput.value, 10) || 1);
+      const notes = document.getElementById('display-notes-input').value.trim();
+      const recordAsExpense = document.getElementById('display-record-expense-chk')?.checked !== false;
+
+      try {
+        await manageDisplaySample({
+          productId: selectedProdId,
+          action,
+          quantity,
+          notes,
+          recordAsExpense
+        });
+        showToast('Display samples updated successfully!', 'success');
+        closeModal();
+        renderApp();
+      } catch (err) {
+        alert(err.message || 'Failed to update display sample.');
+      }
+    });
+  }
+
+  renderModal();
+}
+
+// 13. Drag and Drop Product Reordering Controller (Desktop & Mobile Touch)
+function setupDraggableRows() {
+  const rows = Array.from(document.querySelectorAll('.draggable-product-row'));
+  if (rows.length <= 1) return;
+
+  let draggedId = null;
+
+  // --- Desktop HTML5 Drag & Drop ---
+  rows.forEach(row => {
+    row.addEventListener('dragstart', (e) => {
+      draggedId = row.getAttribute('data-product-id');
+      row.classList.add('is-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', draggedId);
+    });
+
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      const rect = row.getBoundingClientRect();
+      const isTop = (e.clientY - rect.top) < (rect.height / 2);
+      if (isTop) {
+        row.classList.add('drag-over-top');
+        row.classList.remove('drag-over-bottom');
+      } else {
+        row.classList.add('drag-over-bottom');
+        row.classList.remove('drag-over-top');
+      }
+    });
+
+    row.addEventListener('dragleave', () => {
+      row.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+
+    row.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      const targetId = row.getAttribute('data-product-id');
+      const isTop = row.classList.contains('drag-over-top');
+      rows.forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom', 'is-dragging'));
+
+      if (!draggedId || draggedId === targetId) return;
+
+      const currentIds = Array.from(document.querySelectorAll('.draggable-product-row'))
+        .map(r => r.getAttribute('data-product-id'));
+      
+      const fromIdx = currentIds.indexOf(draggedId);
+      if (fromIdx < 0) return;
+      currentIds.splice(fromIdx, 1);
+
+      let toIdx = currentIds.indexOf(targetId);
+      if (!isTop) toIdx += 1;
+      currentIds.splice(toIdx, 0, draggedId);
+
+      await store.reorderProducts(currentIds);
+      showToast('Product order updated / 排序已更新', 'success');
+      renderApp();
+    });
+
+    row.addEventListener('dragend', () => {
+      rows.forEach(r => r.classList.remove('is-dragging', 'drag-over-top', 'drag-over-bottom'));
+      draggedId = null;
+    });
+  });
+
+  // --- Mobile Touch Drag & Drop (iOS Safari & Android) ---
+  const handles = document.querySelectorAll('.drag-handle');
+  let touchDraggedRow = null;
+  let touchDraggedId = null;
+  let touchIndicator = null;
+  let lastTargetRow = null;
+
+  handles.forEach(handle => {
+    handle.addEventListener('touchstart', (e) => {
+      const touch = e.touches[0];
+      touchDraggedRow = handle.closest('.draggable-product-row');
+      if (!touchDraggedRow) return;
+
+      touchDraggedId = touchDraggedRow.getAttribute('data-product-id');
+      const prodName = touchDraggedRow.getAttribute('data-product-name') || 'Product';
+
+      touchDraggedRow.classList.add('is-dragging');
+
+      // Create floating touch indicator
+      touchIndicator = document.createElement('div');
+      touchIndicator.className = 'touch-drag-indicator';
+      touchIndicator.textContent = `⠿ ${prodName}`;
+      touchIndicator.style.left = `${touch.clientX}px`;
+      touchIndicator.style.top = `${touch.clientY}px`;
+      document.body.appendChild(touchIndicator);
+    }, { passive: false });
+
+    handle.addEventListener('touchmove', (e) => {
+      if (!touchDraggedRow) return;
+      e.preventDefault(); // Prevent page scrolling during drag
+
+      const touch = e.touches[0];
+      if (touchIndicator) {
+        touchIndicator.style.left = `${touch.clientX}px`;
+        touchIndicator.style.top = `${touch.clientY}px`;
+      }
+
+      // Temporarily hide touchIndicator so document.elementFromPoint can hit the underlying row
+      touchIndicator.style.display = 'none';
+      const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+      touchIndicator.style.display = 'flex';
+
+      const targetRow = elem ? elem.closest('.draggable-product-row') : null;
+
+      if (targetRow && targetRow !== touchDraggedRow) {
+        if (lastTargetRow && lastTargetRow !== targetRow) {
+          lastTargetRow.classList.remove('drag-over-top', 'drag-over-bottom');
+        }
+        lastTargetRow = targetRow;
+
+        const rect = targetRow.getBoundingClientRect();
+        const isTop = (touch.clientY - rect.top) < (rect.height / 2);
+        if (isTop) {
+          targetRow.classList.add('drag-over-top');
+          targetRow.classList.remove('drag-over-bottom');
+        } else {
+          targetRow.classList.add('drag-over-bottom');
+          targetRow.classList.remove('drag-over-top');
+        }
+      } else if (lastTargetRow) {
+        lastTargetRow.classList.remove('drag-over-top', 'drag-over-bottom');
+        lastTargetRow = null;
+      }
+    }, { passive: false });
+
+    handle.addEventListener('touchend', async () => {
+      if (!touchDraggedRow) return;
+
+      if (touchIndicator && touchIndicator.parentNode) {
+        touchIndicator.parentNode.removeChild(touchIndicator);
+        touchIndicator = null;
+      }
+
+      touchDraggedRow.classList.remove('is-dragging');
+
+      if (lastTargetRow && lastTargetRow !== touchDraggedRow) {
+        const targetId = lastTargetRow.getAttribute('data-product-id');
+        const isTop = lastTargetRow.classList.contains('drag-over-top');
+        lastTargetRow.classList.remove('drag-over-top', 'drag-over-bottom');
+
+        const currentIds = Array.from(document.querySelectorAll('.draggable-product-row'))
+          .map(r => r.getAttribute('data-product-id'));
+        
+        const fromIdx = currentIds.indexOf(touchDraggedId);
+        if (fromIdx >= 0) {
+          currentIds.splice(fromIdx, 1);
+          let toIdx = currentIds.indexOf(targetId);
+          if (!isTop) toIdx += 1;
+          currentIds.splice(toIdx, 0, touchDraggedId);
+
+          await store.reorderProducts(currentIds);
+          showToast('Product order updated / 排序已更新', 'success');
+          renderApp();
+        }
+      }
+
+      touchDraggedRow = null;
+      touchDraggedId = null;
+      lastTargetRow = null;
+    });
+  });
+}
 
 })();
 
