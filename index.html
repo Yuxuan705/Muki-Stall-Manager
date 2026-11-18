@@ -3164,7 +3164,7 @@ async function deleteOrder(orderId) {
 /**
  * Update product cost and log historical cost change
  */
-async function updateProductCost(productId, newCost, notes = '', date = '') {
+async function updateProductCost(productId, newCost, notes = '', date = '', components = null) {
   const product = await db.getById('products', productId);
   if (!product) throw new Error('Product not found.');
 
@@ -3174,19 +3174,28 @@ async function updateProductCost(productId, newCost, notes = '', date = '') {
   const timestamp = new Date().toISOString();
   const entryDate = date || timestamp.split('T')[0];
 
-  // Update product cost
+  const breakdownSnapshot = Array.isArray(components)
+    ? JSON.parse(JSON.stringify(components))
+    : (Array.isArray(product.cost_breakdown) ? JSON.parse(JSON.stringify(product.cost_breakdown)) : []);
+
+  // Update product cost and breakdown
   product.cost = parsedNewCost;
+  if (Array.isArray(components)) {
+    product.cost_breakdown = breakdownSnapshot;
+  }
   product.updated_at = timestamp;
   await db.putItem('products', product);
 
-  // Record cost change history with date and notes
+  // Record cost change history with date, notes, previous/new cost, selling price, and components snapshot
   await db.addItem('cost_history', {
     id: generateId('cost'),
     product_id: productId,
     product_name: product.name,
     previous_cost: previousCost,
     new_cost: parsedNewCost,
+    selling_price: Number(product.selling_price) || 0,
     notes: notes || 'Bulk purchase cost breakdown update',
+    components: breakdownSnapshot,
     date: entryDate,
     timestamp
   });
@@ -6466,11 +6475,18 @@ function renderProductList(products) {
                   </td>
                   <td data-label="Unit Cost" class="num" style="text-align:right;color:var(--text-muted);">
                     <div style="font-weight:700;color:var(--text-main);">${formatRM(computedCost)}</div>
-                    ${p.cost_breakdown && p.cost_breakdown.length > 0 ? `
-                      <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);font-size:0.65rem;font-weight:600;padding:1px 5px;margin-top:2px;display:inline-block;cursor:pointer;" data-action="quick-edit-cost" data-product-id="${p.id}" title="Click to update material and packaging breakdown">
-                        ${p.cost_breakdown.length} components
-                      </span>
-                    ` : ''}
+                    <div style="display:flex;justify-content:flex-end;gap:3px;align-items:center;flex-wrap:wrap;margin-top:2px;">
+                      ${p.cost_breakdown && p.cost_breakdown.length > 0 ? `
+                        <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);font-size:0.65rem;font-weight:600;padding:1px 5px;display:inline-block;cursor:pointer;" data-action="quick-edit-cost" data-product-id="${p.id}" title="Click to view/update material and packaging breakdown">
+                          ${p.cost_breakdown.length} components
+                        </span>
+                      ` : ''}
+                      ${store.costHistory && store.costHistory.some(h => h.product_id === p.id) ? `
+                        <span class="badge badge-outline" style="font-size:0.62rem;font-weight:600;padding:1px 4px;cursor:pointer;" data-action="quick-edit-cost" data-product-id="${p.id}" title="View previous prices and component breakdown history">
+                          History
+                        </span>
+                      ` : ''}
+                    </div>
                   </td>
                   <td data-label="Stock" class="num" style="text-align:right;font-weight:600;">
                     ${isBundle ? '<span style="color:var(--text-light);font-size:0.8rem;">(Formula)</span>' : (Number(p.stock) || 0)}
@@ -6498,6 +6514,9 @@ function renderProductList(products) {
                     <button type="button" class="btn btn-sm btn-secondary" data-action="toggle-product-active" data-product-id="${p.id}">
                       ${p.is_active !== false ? 'Disable' : 'Enable'}
                     </button>
+                    <button type="button" class="btn btn-sm btn-secondary" style="color:var(--color-danger);" data-action="delete-product" data-product-id="${p.id}" title="Delete Product">
+                      Delete
+                    </button>
                   </td>
                 </tr>
               `;
@@ -6512,10 +6531,12 @@ function renderProductList(products) {
 function renderCostHistory(costHistory) {
   return `
     <div class="card">
-      <div style="margin-bottom:14px;">
-        <div class="card-title">Cost Change Audit Log</div>
-        <div class="card-subtitle">
-          Every cost modification is logged permanently. Historical order profits will never be altered.
+      <div style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div class="card-title">Cost Change Audit Log</div>
+          <div class="card-subtitle">
+            Every cost modification and bulk component breakdown is recorded here. Historical orders remain untouched.
+          </div>
         </div>
       </div>
 
@@ -6528,29 +6549,53 @@ function renderCostHistory(costHistory) {
           <table class="table table--mobile-cards">
             <thead>
               <tr>
-                <th>Date & Time</th>
+                <th>Date</th>
                 <th>Product</th>
-                <th style="text-align:right;">Previous Cost</th>
+                <th style="text-align:right;">Old Cost</th>
                 <th style="text-align:right;">New Cost</th>
-                <th style="text-align:right;">Difference</th>
+                <th style="text-align:right;">Change</th>
+                <th>Component Breakdown Snapshot</th>
                 <th>Reason / Notes</th>
+                <th style="text-align:right;">Actions</th>
               </tr>
             </thead>
             <tbody>
               ${costHistory.map(item => {
                 const diff = (Number(item.new_cost) || 0) - (Number(item.previous_cost) || 0);
+                const hasComps = Array.isArray(item.components) && item.components.length > 0;
                 return `
                   <tr>
-                    <td data-label="Date & Time" style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">
-                      ${formatDateTime(item.timestamp)}
+                    <td data-label="Date" style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">
+                      ${item.date || (item.timestamp ? formatDateTime(item.timestamp) : 'N/A')}
                     </td>
-                    <td data-label="Product" style="font-weight:700;">${item.product_name}</td>
+                    <td data-label="Product" style="font-weight:700;">
+                      <div>${item.product_name}</div>
+                      ${item.selling_price ? `<div style="font-size:0.75rem;color:var(--text-muted);font-weight:normal;">Selling: RM ${Number(item.selling_price).toFixed(2)}</div>` : ''}
+                    </td>
                     <td data-label="Old Cost" class="num" style="text-align:right;color:var(--text-muted);">${formatRM(item.previous_cost)}</td>
                     <td data-label="New Cost" class="num" style="text-align:right;font-weight:700;color:var(--color-brown);">${formatRM(item.new_cost)}</td>
                     <td data-label="Change" class="num" style="text-align:right;font-weight:600;color:${diff > 0 ? 'var(--color-orange)' : 'var(--color-brown-dark)'};">
                       ${diff > 0 ? `+${formatRM(diff)}` : `-${formatRM(Math.abs(diff))}`}
                     </td>
+                    <td data-label="Components" style="max-width:280px;">
+                      ${hasComps ? `
+                        <div style="display:flex;flex-direction:column;gap:3px;">
+                          ${item.components.map(c => `
+                            <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown-dark);font-size:0.68rem;font-weight:600;padding:2px 6px;display:inline-block;white-space:normal;line-height:1.2;">
+                              ${c.name || 'Item'}: ${c.batch_qty || 1} pcs @ RM ${Number(c.batch_cost || 0).toFixed(2)} (RM ${Number(c.unit_cost || 0).toFixed(2)}/ea)
+                            </span>
+                          `).join('')}
+                        </div>
+                      ` : `
+                        <span style="font-size:0.75rem;color:var(--text-muted);font-style:italic;">Manual / Baseline cost update</span>
+                      `}
+                    </td>
                     <td data-label="Notes" style="font-size:0.82rem;color:var(--text-muted);">${item.notes || '-'}</td>
+                    <td data-label="Actions" style="text-align:right;white-space:nowrap;">
+                      <button type="button" class="btn btn-sm btn-secondary" style="color:var(--color-danger);" data-action="delete-cost-log" data-log-id="${item.id}" title="Delete this wrong or unwanted cost log">
+                        Delete
+                      </button>
+                    </td>
                   </tr>
                 `;
               }).join('')}
@@ -7320,6 +7365,48 @@ function attachEventListeners() {
         await db.putItem('products', prod);
         await store.refreshAll();
         showToast(`Product ${prod.is_active ? 'enabled' : 'disabled'}`, 'success');
+      }
+    });
+  });
+
+  // Product deletion handler
+  async function deleteProduct(productId) {
+    const prod = await db.getById('products', productId);
+    if (!prod) return;
+
+    // Remove any recipe connections if part of a bundle
+    const affectedRecipes = store.recipes.filter(r => r.parent_product_id === productId || r.component_product_id === productId);
+    for (const r of affectedRecipes) {
+      await db.deleteItem('recipes', r.id);
+    }
+
+    await db.deleteItem('products', productId);
+    await store.refreshAll();
+    showToast(`Product "${prod.name}" permanently deleted.`, 'info');
+    renderApp();
+  }
+
+  appRoot.querySelectorAll('[data-action="delete-product"]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-product-id');
+      const prod = await db.getById('products', id);
+      if (prod && confirm(`Are you sure you want to permanently delete "${prod.name}"? This action cannot be undone.`)) {
+        await deleteProduct(id);
+      }
+    });
+  });
+
+  // Cost change log deletion handler from table
+  appRoot.querySelectorAll('[data-action="delete-cost-log"]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const logId = btn.getAttribute('data-log-id');
+      if (confirm('Are you sure you want to delete this cost change log record?')) {
+        await db.deleteItem('cost_history', logId);
+        await store.refreshAll();
+        showToast('Cost change log record deleted.', 'info');
+        renderApp();
       }
     });
   });
@@ -8575,11 +8662,18 @@ function openProductModal(prod = null) {
               <textarea id="prod-desc-input" class="form-textarea" rows="2" placeholder="Optional notes or details">${prod?.description || ''}</textarea>
             </div>
           </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" id="modal-prod-abort-btn">Cancel</button>
-            <button type="button" class="btn btn-primary" id="modal-prod-save-btn">
-              ${isEdit ? 'Save Changes' : 'Create Product'}
-            </button>
+          <div class="modal-footer" style="display:flex;justify-content:space-between;align-items:center;">
+            ${isEdit ? `
+              <button type="button" class="btn btn-secondary" style="color:var(--color-danger);" id="modal-prod-delete-btn">
+                Delete Product
+              </button>
+            ` : '<div></div>'}
+            <div style="display:flex;gap:8px;">
+              <button type="button" class="btn btn-secondary" id="modal-prod-abort-btn">Cancel</button>
+              <button type="button" class="btn btn-primary" id="modal-prod-save-btn">
+                ${isEdit ? 'Save Changes' : 'Create Product'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -8587,6 +8681,23 @@ function openProductModal(prod = null) {
 
     document.getElementById('modal-close-btn').addEventListener('click', closeModal);
     document.getElementById('modal-prod-abort-btn').addEventListener('click', closeModal);
+
+    if (isEdit) {
+      document.getElementById('modal-prod-delete-btn')?.addEventListener('click', async () => {
+        if (confirm(`Are you sure you want to permanently delete "${prod.name}"? This action cannot be undone.`)) {
+          // Remove any recipe connections
+          const affectedRecipes = store.recipes.filter(r => r.parent_product_id === prod.id || r.component_product_id === prod.id);
+          for (const r of affectedRecipes) {
+            await db.deleteItem('recipes', r.id);
+          }
+          await db.deleteItem('products', prod.id);
+          await store.refreshAll();
+          showToast(`Product "${prod.name}" permanently deleted.`, 'info');
+          closeModal();
+          renderApp();
+        }
+      });
+    }
 
     const bundleSelect = document.getElementById('prod-bundle-select');
     bundleSelect.addEventListener('change', (e) => {
@@ -8755,15 +8866,30 @@ function openProductModal(prod = null) {
 
       await db.putItem('products', productRecord);
 
-      // If new product and has cost, log initial cost history entry
-      if (!prod && cost > 0) {
+      // If new product and has cost or breakdown, log initial cost history entry
+      if (!prod && (cost > 0 || validBreakdown.length > 0)) {
         await db.addItem('cost_history', {
           id: generateId('cost'),
           product_id: productRecord.id,
           product_name: productRecord.name,
           previous_cost: 0,
           new_cost: cost,
-          notes: 'Initial product creation cost',
+          selling_price: sellingPrice,
+          notes: 'Initial product creation & component breakdown',
+          components: validBreakdown,
+          date: prodDate,
+          timestamp
+        });
+      } else if (prod && (cost !== Number(prod.cost) || JSON.stringify(validBreakdown) !== JSON.stringify(prod.cost_breakdown || []))) {
+        await db.addItem('cost_history', {
+          id: generateId('cost'),
+          product_id: productRecord.id,
+          product_name: productRecord.name,
+          previous_cost: Number(prod.cost) || 0,
+          new_cost: cost,
+          selling_price: sellingPrice,
+          notes: desc || 'Product edit: cost and components update',
+          components: validBreakdown,
           date: prodDate,
           timestamp
         });
@@ -8781,7 +8907,7 @@ function openProductModal(prod = null) {
   renderProductModal();
 }
 
-// 6. Cost Breakdown & Bulk Calculator Modal (Dedicated Update Modal)
+// 6. Cost Breakdown & Bulk Calculator Modal (Dedicated Update Modal with History)
 function openQuickCostModal(prod) {
   const container = document.getElementById('modal-container');
   if (!container) return;
@@ -8798,16 +8924,20 @@ function openQuickCostModal(prod) {
   const today = new Date().toISOString().split('T')[0];
 
   function renderModalContent() {
+    const productHistory = (store.costHistory || [])
+      .filter(h => h.product_id === prod.id)
+      .sort((a, b) => new Date(b.date || b.timestamp) - new Date(a.date || a.timestamp));
+
     container.innerHTML = `
       <div class="modal-overlay">
-        <div class="modal-card" style="max-width:680px;width:95%;">
+        <div class="modal-card" style="max-width:700px;width:95%;max-height:88vh;display:flex;flex-direction:column;">
           <div class="modal-header">
             <div class="modal-title" style="display:flex;align-items:center;gap:6px;">
               <span>Cost Breakdown &amp; Bulk Calculator — ${prod.name}</span>
             </div>
             <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
           </div>
-          <div class="modal-body" style="max-height:75vh;overflow-y:auto;">
+          <div class="modal-body" style="overflow-y:auto;max-height:calc(88vh - 120px);padding:16px;">
             <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:14px;font-size:0.82rem;color:var(--color-brown-dark);line-height:1.45;">
               Designed for bulk batch purchasing (e.g. 100 or 1000 pcs). Enter total batch quantity and total spend to calculate exact unit cost.
             </div>
@@ -8904,6 +9034,89 @@ function openQuickCostModal(prod) {
               <label class="form-label">General Cost Notes</label>
               <textarea id="cost-notes-textarea" class="form-textarea" rows="2" placeholder="e.g. 1000 pcs main items RM1500 + 500 pcs bags RM25 + 1000 pcs stickers RM20">${prod.cost_notes || ''}</textarea>
             </div>
+
+            <!-- Past Cost & Component History Section -->
+            <div style="margin-top:18px;border-top:1px solid var(--border-light);padding-top:14px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--color-brown);">
+                  Cost &amp; Component History (${productHistory.length} records)
+                </span>
+                <span style="font-size:0.72rem;color:var(--text-muted);">
+                  Previous prices and component breakdowns
+                </span>
+              </div>
+
+              ${productHistory.length === 0 ? `
+                <div style="font-size:0.76rem;color:var(--text-muted);font-style:italic;padding:8px 10px;background:var(--bg-secondary);border-radius:var(--radius-sm);border:1px dashed var(--border-light);">
+                  No previous cost updates recorded yet. Any saved cost update will appear here with full component snapshots.
+                </div>
+              ` : `
+                <div style="display:flex;flex-direction:column;gap:10px;max-height:260px;overflow-y:auto;padding-right:4px;">
+                  ${productHistory.map((h, hIdx) => {
+                    const hasComps = Array.isArray(h.components) && h.components.length > 0;
+                    return `
+                      <div style="background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+                          <div>
+                            <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown-dark);font-size:0.72rem;font-weight:700;">
+                              ${h.date || (h.timestamp ? h.timestamp.split('T')[0] : 'N/A')}
+                            </span>
+                            <span style="font-weight:700;font-size:0.88rem;color:var(--text-main);margin-left:8px;">
+                              Cost: <span style="color:var(--text-muted);text-decoration:line-through;">RM ${Number(h.previous_cost || 0).toFixed(2)}</span> &rarr; <strong style="color:var(--color-brown);">RM ${Number(h.new_cost || 0).toFixed(2)}</strong>
+                            </span>
+                            ${h.selling_price ? `<span style="font-size:0.75rem;color:var(--text-muted);margin-left:6px;">(Selling: RM ${Number(h.selling_price).toFixed(2)})</span>` : ''}
+                          </div>
+                          <div style="display:flex;align-items:center;gap:6px;">
+                            ${hasComps ? `
+                              <button type="button" class="btn btn-sm btn-secondary btn-restore-history-comps" data-history-idx="${hIdx}" style="font-size:0.7rem;padding:2px 8px;" title="Load this component breakdown into the editor above">
+                                Use These Components
+                              </button>
+                            ` : ''}
+                            <button type="button" class="btn btn-sm btn-secondary btn-del-modal-history" data-log-id="${h.id}" style="font-size:0.7rem;padding:2px 6px;color:var(--color-danger);" title="Delete this wrong cost record">
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+
+                        ${h.notes ? `
+                          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+                            ${h.notes}
+                          </div>
+                        ` : ''}
+
+                        ${hasComps ? `
+                          <div style="margin-top:8px;background:var(--bg-secondary);border-radius:var(--radius-sm);padding:8px;">
+                            <div style="font-size:0.7rem;font-weight:700;color:var(--color-brown);margin-bottom:4px;text-transform:uppercase;">
+                              Component Breakdown Snapshot (${h.components.length})
+                            </div>
+                            <table style="width:100%;font-size:0.75rem;border-collapse:collapse;">
+                              <thead>
+                                <tr style="border-bottom:1px solid var(--border-light);color:var(--text-muted);text-align:left;">
+                                  <th style="padding:2px 4px;">Component</th>
+                                  <th style="padding:2px 4px;text-align:right;">Total Qty</th>
+                                  <th style="padding:2px 4px;text-align:right;">Total Spend</th>
+                                  <th style="padding:2px 4px;text-align:right;">Unit Cost</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                ${h.components.map(c => `
+                                  <tr style="border-bottom:1px dashed var(--border-light);">
+                                    <td style="padding:3px 4px;font-weight:600;">${c.name || 'Component'}</td>
+                                    <td style="padding:3px 4px;text-align:right;">${c.batch_qty || 1} pcs</td>
+                                    <td style="padding:3px 4px;text-align:right;">RM ${Number(c.batch_cost || 0).toFixed(2)}</td>
+                                    <td style="padding:3px 4px;text-align:right;font-weight:700;color:var(--color-brown);">RM ${Number(c.unit_cost || 0).toFixed(2)}</td>
+                                  </tr>
+                                `).join('')}
+                              </tbody>
+                            </table>
+                          </div>
+                        ` : ''}
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              `}
+            </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" id="modal-cost-abort-btn">Cancel</button>
@@ -8963,6 +9176,36 @@ function openQuickCostModal(prod) {
       });
     });
 
+    // Restore history components
+    container.querySelectorAll('.btn-restore-history-comps').forEach(btn => {
+      btn.addEventListener('click', () => {
+        saveInputsToBreakdown();
+        const hIdx = parseInt(btn.getAttribute('data-history-idx'), 10);
+        const targetHist = productHistory[hIdx];
+        if (targetHist && Array.isArray(targetHist.components) && targetHist.components.length > 0) {
+          breakdown = JSON.parse(JSON.stringify(targetHist.components));
+          renderModalContent();
+          const total = recalculateAll();
+          document.getElementById('new-cost-input').value = total.toFixed(2);
+          showToast(`Loaded ${targetHist.components.length} components from ${targetHist.date || 'history'}!`, 'info');
+        }
+      });
+    });
+
+    // Delete mistaken history log entry
+    container.querySelectorAll('.btn-del-modal-history').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const logId = btn.getAttribute('data-log-id');
+        if (confirm('Are you sure you want to delete this historical cost record?')) {
+          await db.deleteItem('cost_history', logId);
+          await store.refreshAll();
+          showToast('Cost history record deleted.', 'info');
+          renderModalContent();
+        }
+      });
+    });
+
     // Real-time live recalculate on any cost or quantity keystroke
     container.querySelectorAll('.cost-item-cost, .cost-item-qty').forEach(input => {
       input.addEventListener('input', () => {
@@ -8996,7 +9239,7 @@ function openQuickCostModal(prod) {
           product.cost_notes = costNotes;
           await db.putItem('products', product);
         }
-        await updateProductCost(prod.id, newCost, reason || 'Bulk purchase cost breakdown update', updateDate);
+        await updateProductCost(prod.id, newCost, reason || 'Bulk purchase cost breakdown update', updateDate, breakdown);
         showToast('Cost breakdown and unit cost saved!', 'success');
         closeModal();
       } catch (err) {
