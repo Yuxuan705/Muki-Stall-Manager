@@ -45,8 +45,8 @@
   --color-white: #f8f6f3;
   --color-orange: #f9a127;
   --color-yellow: #f1dd9d;
-  --color-danger: #c53030;
-  --color-success: #2f855a;
+  --color-danger: #5e3b2e;
+  --color-success: #936653;
 
   --font-family-base: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-sans: var(--font-family-base);
@@ -386,12 +386,13 @@ h1.page-title {
 
 .btn-danger {
   background-color: var(--color-white);
-  color: var(--color-danger);
-  border-color: #fca5a5;
+  color: var(--color-brown-dark);
+  border-color: var(--border-light);
 }
 
 .btn-danger:hover {
-  background-color: #fef2f2;
+  background-color: var(--bg-hover);
+  border-color: var(--color-brown);
 }
 
 .btn:disabled {
@@ -510,27 +511,27 @@ h1.page-title {
 }
 
 .badge-active {
-  background-color: #f0fdf4;
-  color: var(--color-success);
-  border-color: #bbf7d0;
+  background-color: var(--bg-secondary);
+  color: var(--color-brown-dark);
+  border-color: var(--border-light);
 }
 
 .badge-cancelled {
-  background-color: #fef2f2;
-  color: var(--color-danger);
-  border-color: #fecaca;
+  background-color: var(--bg-subtle);
+  color: var(--text-muted);
+  border-color: var(--border-light);
 }
 
 .badge-bundle {
   background-color: var(--color-yellow);
-  color: #6e4433;
-  border-color: #e5cb85;
+  color: var(--color-brown-dark);
+  border-color: var(--border-light);
 }
 
 .badge-warning {
-  background-color: #fffbeb;
-  color: #b45309;
-  border-color: #fde68a;
+  background-color: var(--color-yellow);
+  color: var(--color-brown-dark);
+  border-color: var(--border-light);
 }
 
 .badge-accent {
@@ -1074,7 +1075,7 @@ h1.page-title {
 }
 .draggable-product-row.is-dragging {
   opacity: 0.45 !important;
-  background-color: #fef3c7 !important;
+  background-color: var(--bg-hover) !important;
 }
 .draggable-product-row.drag-over-top {
   border-top: 3px solid var(--color-brown) !important;
@@ -1102,7 +1103,7 @@ h1.page-title {
 .drag-handle:hover, .drag-handle:active {
   cursor: grabbing;
   color: var(--color-brown-dark);
-  background: #fde68a;
+  background: var(--bg-hover);
   border-color: var(--color-brown);
   transform: scale(1.08);
 }
@@ -4224,7 +4225,7 @@ function renderPos() {
                   </div>
                   
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:0.75rem;">
-                    <span style="color:${isOut ? (prod.display_stock > 0 ? '#0284c7' : 'var(--color-danger)') : available <= 5 ? 'var(--color-orange)' : 'var(--text-muted)'};font-weight:600;">
+                    <span style="color:${isOut ? 'var(--text-muted)' : available <= 5 ? 'var(--color-orange)' : 'var(--text-muted)'};font-weight:600;">
                       ${isOut 
                         ? (prod.display_stock > 0 ? `0 for sale (👁️ ${prod.display_stock} Display)` : 'Out of stock') 
                         : `${available} in stock${prod.display_stock > 0 ? ` (+${prod.display_stock} 👁️)` : ''}`}
@@ -4330,8 +4331,8 @@ function renderPos() {
         <!-- Checkout Summary & Action Footer -->
         <div style="padding:14px 16px;border-top:1px solid var(--border-light);background-color:var(--color-white);">
           ${qualifiedThresholdPromo ? `
-            <div style="margin-bottom:10px;background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-md);padding:8px 10px;display:flex;justify-content:space-between;align-items:center;gap:6px;">
-              <div style="font-size:0.8rem;color:#92400e;line-height:1.25;">
+            <div style="margin-bottom:10px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:8px 10px;display:flex;justify-content:space-between;align-items:center;gap:6px;">
+              <div style="font-size:0.8rem;color:var(--color-brown-dark);line-height:1.25;">
                 <span style="font-weight:700;">🎉 Offer Unlocked (Min RM${qualifiedThresholdPromo.min_spend})!</span><br>
                 <span>${qualifiedThresholdPromo.name}</span>
               </div>
@@ -4554,14 +4555,14 @@ function renderPromotions() {
                   </div>
 
                   ${promo.type === 'spend_threshold_gift' && promo.gift_product_id ? `
-                    <div style="margin-top:12px;background:#fef3c7;border:1px solid #fde68a;border-radius:var(--radius-md);padding:10px 12px;font-size:0.85rem;color:#92400e;">
+                    <div style="margin-top:12px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 12px;font-size:0.85rem;color:var(--color-brown-dark);">
                       🎁 Free Gift: <strong>${store.products.find(p => p.id === promo.gift_product_id)?.name || 'Gift item'}</strong> (x${promo.gift_quantity || 1})
-                      <div style="font-size:0.75rem;color:#b45309;margin-top:2px;">Triggered when customer spends RM${promo.min_spend || 0} or more</div>
+                      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Triggered when customer spends RM${promo.min_spend || 0} or more</div>
                     </div>
                   ` : ''}
 
                   ${promo.type === 'spend_threshold_discount' ? `
-                    <div style="margin-top:12px;background:#fef3c7;border:1px solid #fde68a;border-radius:var(--radius-md);padding:10px 12px;font-size:0.85rem;color:#92400e;">
+                    <div style="margin-top:12px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 12px;font-size:0.85rem;color:var(--color-brown-dark);">
                       🏷️ Spend Offer: Spend <strong>RM${promo.min_spend || 0}</strong> and get <strong>${promo.discount_type === 'percent' ? promo.value + '% off' : 'RM' + promo.value + ' off'}</strong>!
                     </div>
                   ` : ''}
@@ -4932,7 +4933,7 @@ function renderDailyRecords() {
                 ${dayOrders.map(o => {
                   const isCancelled = o.status === 'cancelled';
                   return `
-                    <tr style="${isCancelled ? 'opacity:0.6;background:#fef2f2;' : ''}">
+                    <tr style="${isCancelled ? 'opacity:0.6;background:var(--bg-secondary);' : ''}">
                       <td style="font-family:var(--font-mono);font-weight:700;font-size:0.85rem;">
                         ${o.order_number}
                       </td>
@@ -5017,11 +5018,11 @@ function renderInventory() {
           <div class="page-subtitle">Track physical coin stock, bundle assembly recipes, and inventory movements</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button type="button" class="btn btn-secondary" data-action="open-manage-display-modal" style="color:#0369a1;border-color:#bae6fd;background:#f0f9ff;font-weight:700;">
+          <button type="button" class="btn btn-secondary" data-action="open-manage-display-modal">
             ${renderIcon('package', 16)}
             <span>Display Samples / 展品样板</span>
           </button>
-          <button type="button" class="btn btn-secondary" data-action="open-record-defect-modal" style="color:var(--color-danger);border-color:#fca5a5;background:#ffffff;font-weight:700;">
+          <button type="button" class="btn btn-secondary" data-action="open-record-defect-modal">
             ${renderIcon('alert', 16)}
             <span>Record Defect / 制作损耗</span>
           </button>
@@ -5059,7 +5060,7 @@ function renderStockTab(products) {
   return `
     <div class="card" style="margin-bottom:24px;">
       <div style="margin-bottom:12px;font-size:0.85rem;color:var(--text-muted);">
-        Total: <strong>${products.length}</strong> items. <strong>Drag ⠿</strong> or use <strong>▲/▼</strong> to adjust stall display sequence.
+        Total: <strong>${products.length}</strong> items. <strong>Drag ⠿</strong> to adjust stall display sequence.
       </div>
       <div class="table-container">
         <table class="table table--mobile-cards">
@@ -5087,11 +5088,9 @@ function renderStockTab(products) {
               return `
                 <tr class="draggable-product-row" draggable="true" data-product-id="${prod.id}" data-product-name="${(prod.name || '').replace(/"/g, '&quot;')}" data-idx="${idx}">
                   <td data-label="Order" style="text-align:center;white-space:nowrap;">
-                    <div style="display:inline-flex;align-items:center;gap:4px;">
+                    <div style="display:inline-flex;align-items:center;gap:6px;justify-content:center;">
                       <span class="drag-handle" title="Drag to reorder / 拖拽排序" data-product-id="${prod.id}" data-idx="${idx}">⠿</span>
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${prod.id}" data-dir="up" title="Move Up" style="padding:2px 6px;font-size:0.72rem;line-height:1;" ${idx === 0 ? 'disabled' : ''}>▲</button>
-                      <span style="font-size:0.82rem;font-weight:700;color:var(--text-muted);min-width:18px;text-align:center;">${idx + 1}</span>
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${prod.id}" data-dir="down" title="Move Down" style="padding:2px 6px;font-size:0.72rem;line-height:1;" ${idx === products.length - 1 ? 'disabled' : ''}>▼</button>
+                      <span style="font-size:0.85rem;font-weight:700;color:var(--text-muted);min-width:18px;text-align:center;">${idx + 1}</span>
                     </div>
                   </td>
                   <td data-label="Product" style="font-weight:700;font-size:0.95rem;">
@@ -5113,7 +5112,7 @@ function renderStockTab(products) {
                   <td data-label="Physical Stock" class="num" style="text-align:right;font-weight:600;font-size:0.95rem;">
                     <div>${isBundle ? '<span style="color:var(--text-light);font-weight:normal;">Auto-assembled</span>' : directStock}</div>
                     ${!isBundle && (prod.display_stock > 0) ? `
-                      <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:0.65rem;font-weight:700;margin-top:2px;display:inline-block;" title="Stall Display Sample">👁️ ${prod.display_stock} Display</span>
+                      <span class="badge badge-outline" style="font-size:0.65rem;font-weight:700;margin-top:2px;display:inline-block;" title="Stall Display Sample">👁️ ${prod.display_stock} Display</span>
                     ` : ''}
                   </td>
                   <td data-label="Available" class="num" style="text-align:right;font-weight:700;font-size:1.05rem;color:${available <= 5 ? 'var(--color-danger)' : 'var(--color-brown);'};">
@@ -5125,7 +5124,7 @@ function renderStockTab(products) {
                   <td data-label="Action" class="td-actions">
                     ${!isBundle ? `
                       <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">
-                        <button type="button" class="btn btn-sm btn-secondary" data-action="open-manage-display-modal" data-product-id="${prod.id}" style="color:#0369a1;border-color:#bae6fd;padding:2px 7px;font-size:0.75rem;" title="Manage Stall Display Samples">
+                        <button type="button" class="btn btn-sm btn-secondary" data-action="open-manage-display-modal" data-product-id="${prod.id}" style="padding:2px 7px;font-size:0.75rem;" title="Manage Stall Display Samples">
                           👁️ Display (${prod.display_stock || 0})
                         </button>
                         <button type="button" class="btn btn-sm btn-secondary" data-action="quick-adjust-stock" data-product-id="${prod.id}" style="padding:2px 7px;font-size:0.75rem;">
@@ -5206,7 +5205,7 @@ function renderMovementsTab(movements, products) {
                       ${formatDateTime(m.timestamp)}
                     </td>
                     <td data-label="Product" style="font-weight:700;">${m.product_name}</td>
-                    <td data-label="Change" class="num" style="text-align:center;font-weight:700;color:${isPos ? 'var(--color-success)' : 'var(--color-danger)'};">
+                    <td data-label="Change" class="num" style="text-align:center;font-weight:700;color:${isPos ? 'var(--color-brown-dark)' : 'var(--color-brown)'};">
                       ${isPos ? `+${m.delta}` : m.delta}
                     </td>
                     <td data-label="Prev → New" class="num" style="text-align:right;font-size:0.85rem;">
@@ -5442,7 +5441,7 @@ function renderProductList(products) {
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
         <div style="font-size:0.85rem;color:var(--text-muted);">
-          Total: <strong>${products.length}</strong> products. <strong>Drag ⠿</strong> or use <strong>▲/▼</strong> to customize display order.
+          Total: <strong>${products.length}</strong> products. <strong>Drag ⠿</strong> to customize display sequence.
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <label style="font-size:0.78rem;font-weight:600;color:var(--text-muted);">Sort by:</label>
@@ -5481,11 +5480,9 @@ function renderProductList(products) {
               return `
                 <tr class="draggable-product-row" draggable="true" data-product-id="${p.id}" data-product-name="${(p.name || '').replace(/"/g, '&quot;')}" data-idx="${idx}" style="${!p.is_active ? 'opacity:0.55;background:#fafafa;' : ''}">
                   <td data-label="Order" style="text-align:center;white-space:nowrap;">
-                    <div style="display:inline-flex;align-items:center;gap:4px;">
+                    <div style="display:inline-flex;align-items:center;gap:6px;justify-content:center;">
                       <span class="drag-handle" title="Drag to reorder / 拖拽排序" data-product-id="${p.id}" data-idx="${idx}">⠿</span>
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${p.id}" data-dir="up" title="Move Up" style="padding:2px 6px;font-size:0.72rem;line-height:1;" ${idx === 0 ? 'disabled' : ''}>▲</button>
-                      <span style="font-size:0.82rem;font-weight:700;color:var(--text-muted);min-width:18px;text-align:center;">${idx + 1}</span>
-                      <button type="button" class="btn btn-sm btn-secondary" data-action="move-product" data-product-id="${p.id}" data-dir="down" title="Move Down" style="padding:2px 6px;font-size:0.72rem;line-height:1;" ${idx === products.length - 1 ? 'disabled' : ''}>▼</button>
+                      <span style="font-size:0.85rem;font-weight:700;color:var(--text-muted);min-width:18px;text-align:center;">${idx + 1}</span>
                     </div>
                   </td>
                   <td data-label="Product" style="font-weight:700;font-size:0.95rem;">
@@ -5512,7 +5509,7 @@ function renderProductList(products) {
                   <td data-label="Stock" class="num" style="text-align:right;font-weight:600;">
                     ${isBundle ? '<span style="color:var(--text-light);font-size:0.8rem;">(Formula)</span>' : (Number(p.stock) || 0)}
                     ${!isBundle && (p.display_stock > 0) ? `
-                      <div><span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:0.65rem;font-weight:700;padding:1px 5px;margin-top:2px;display:inline-block;" title="Stall Display Sample">👁️ ${p.display_stock} Display</span></div>
+                      <div><span class="badge badge-outline" style="font-size:0.65rem;font-weight:700;padding:1px 5px;margin-top:2px;display:inline-block;" title="Stall Display Sample">👁️ ${p.display_stock} Display</span></div>
                     ` : ''}
                   </td>
                   <td data-label="Type" style="text-align:center;">
@@ -5584,7 +5581,7 @@ function renderCostHistory(costHistory) {
                     <td data-label="Product" style="font-weight:700;">${item.product_name}</td>
                     <td data-label="Old Cost" class="num" style="text-align:right;color:var(--text-muted);">${formatRM(item.previous_cost)}</td>
                     <td data-label="New Cost" class="num" style="text-align:right;font-weight:700;color:var(--color-brown);">${formatRM(item.new_cost)}</td>
-                    <td data-label="Change" class="num" style="text-align:right;font-weight:600;color:${diff > 0 ? 'var(--color-danger)' : 'var(--color-success)'};">
+                    <td data-label="Change" class="num" style="text-align:right;font-weight:600;color:${diff > 0 ? 'var(--color-orange)' : 'var(--color-brown-dark)'};">
                       ${diff > 0 ? `+${formatRM(diff)}` : `-${formatRM(Math.abs(diff))}`}
                     </td>
                     <td data-label="Notes" style="font-size:0.82rem;color:var(--text-muted);">${item.notes || '-'}</td>
@@ -6337,15 +6334,7 @@ function attachEventListeners() {
     });
   });
 
-  // Product re-ordering (▲ / ▼ buttons in Products and Inventory)
-  appRoot.querySelectorAll('[data-action="move-product"]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const prodId = btn.getAttribute('data-product-id');
-      const dir = btn.getAttribute('data-dir');
-      await store.moveProduct(prodId, dir);
-      renderApp();
-    });
-  });
+
 
   // Enable drag-and-drop reordering for desktop & mobile touch
   setupDraggableRows();
@@ -6660,9 +6649,9 @@ function openOrderInspectModal(order) {
         </div>
         <div class="modal-body">
           <!-- Status Banner -->
-          <div style="padding:10px 14px;border-radius:var(--radius-md);margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;background:${isCancelled ? '#fef2f2' : '#f0fdf4'};border:1px solid ${isCancelled ? '#fecaca' : '#bbf7d0'};">
+          <div style="padding:10px 14px;border-radius:var(--radius-md);margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;background:var(--bg-secondary);border:1px solid var(--border-light);">
             <div>
-              <span style="font-weight:700;color:${isCancelled ? 'var(--color-danger)' : 'var(--color-success)'};">
+              <span style="font-weight:700;color:${isCancelled ? 'var(--text-muted)' : 'var(--color-brown-dark)'};">
                 ${isCancelled ? 'ORDER CANCELLED / VOIDED' : 'ORDER COMPLETED'}
               </span>
               ${isCancelled ? `
@@ -6761,7 +6750,7 @@ function openDeleteOrderModal(order) {
     <div class="modal-overlay">
       <div class="modal-card" style="max-width:440px;">
         <div class="modal-header">
-          <div class="modal-title" style="color:var(--color-danger);display:flex;align-items:center;gap:6px;">
+          <div class="modal-title" style="color:var(--color-brown-dark);display:flex;align-items:center;gap:6px;">
             ${renderIcon('trash', 18)}
             <span>Delete Order ${order.order_number}</span>
           </div>
@@ -6771,7 +6760,7 @@ function openDeleteOrderModal(order) {
           <p style="font-size:0.9rem;color:var(--text-main);margin-bottom:12px;">
             Are you sure you want to delete this mistaken order?
           </p>
-          <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-md);padding:12px;font-size:0.84rem;color:#991b1b;margin-bottom:16px;line-height:1.5;">
+          <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;font-size:0.84rem;color:var(--color-brown-dark);margin-bottom:16px;line-height:1.5;">
             • Deducted product items will be <strong>restored into inventory</strong>.<br>
             • Sales revenue, profit, and daily statistics will be <strong>recalculated automatically</strong>.<br>
             • The order record will be permanently deleted.
@@ -6849,10 +6838,10 @@ function openStockAdjustModal(preselectedProductId = '') {
           </div>
 
           <!-- Defect Loss preview box -->
-          <div id="adjust-loss-box" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-md);padding:10px 12px;margin-bottom:12px;">
+          <div id="adjust-loss-box" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:12px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
               <span style="font-size:0.8rem;color:#991b1b;font-weight:700;">⚠️ Defect Loss Calculation</span>
-              <span id="adjust-loss-amount" style="font-size:0.95rem;font-weight:800;color:var(--color-danger);font-family:var(--font-mono);">RM 0.00</span>
+              <span id="adjust-loss-amount" style="font-size:0.95rem;font-weight:800;color:var(--color-brown-dark);font-family:var(--font-mono);">RM 0.00</span>
             </div>
             <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:#7f1d1d;cursor:pointer;">
               <input type="checkbox" id="adjust-expense-check" checked>
@@ -6980,17 +6969,17 @@ function openRecordDefectModal(preselectedProductId = '') {
           </div>
 
           <!-- Dynamic Loss Calculation Card -->
-          <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-md);padding:12px 14px;margin-bottom:12px;">
+          <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:12px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <div>
                 <div style="font-size:0.75rem;color:#7f1d1d;font-weight:700;text-transform:uppercase;">Calculated Financial Loss</div>
                 <div id="defect-calc-details" style="font-size:0.8rem;color:#991b1b;margin-top:2px;">1 pcs × RM 0.00</div>
               </div>
-              <div id="defect-total-loss" style="font-size:1.45rem;font-weight:800;color:var(--color-danger);font-family:var(--font-mono);">
+              <div id="defect-total-loss" style="font-size:1.45rem;font-weight:800;color:var(--color-brown-dark);font-family:var(--font-mono);">
                 RM 0.00
               </div>
             </div>
-            <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #fca5a5;">
+            <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border-light);">
               <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:#7f1d1d;cursor:pointer;font-weight:600;">
                 <input type="checkbox" id="defect-expense-checkbox" checked>
                 <span>Automatically record as Operating Expense under "Defect &amp; Wastage"</span>
@@ -7005,7 +6994,7 @@ function openRecordDefectModal(preselectedProductId = '') {
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" id="modal-defect-abort-btn">Cancel</button>
-          <button type="button" class="btn btn-primary" id="modal-defect-submit-btn" style="background:var(--color-danger);border-color:var(--color-danger);">
+          <button type="button" class="btn btn-primary" id="modal-defect-submit-btn">
             Confirm Defect &amp; Deduct Stock
           </button>
         </div>
@@ -7153,7 +7142,7 @@ function openManageCategoriesModal() {
             ${categories.map(cat => `
               <div style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-secondary);border:1px solid var(--border-light);padding:5px 12px;border-radius:20px;font-size:0.88rem;font-weight:700;color:var(--color-brown);">
                 <span>${cat}</span>
-                <button type="button" class="btn-delete-cat" data-category="${cat}" title="Delete Category" style="background:none;border:none;color:var(--color-danger);cursor:pointer;font-size:0.85rem;line-height:1;padding:0 2px;display:flex;align-items:center;">
+                <button type="button" class="btn-delete-cat" data-category="${cat}" title="Delete Category" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.85rem;line-height:1;padding:0 2px;display:flex;align-items:center;">
                   ${renderIcon('x', 13)}
                 </button>
               </div>
@@ -7415,7 +7404,7 @@ function openQuickCostModal(prod) {
                       </div>
                       <div>
                         <label style="font-size:0.68rem;visibility:hidden;display:block;">Del</label>
-                        <button type="button" class="btn btn-sm btn-secondary btn-del-cost-item" data-idx="${idx}" style="padding:4px 6px;color:var(--color-danger);height:28px;" ${breakdown.length <= 1 ? 'disabled' : ''}>
+                        <button type="button" class="btn btn-sm btn-secondary btn-del-cost-item" data-idx="${idx}" style="padding:4px 6px;color:var(--text-muted);height:28px;" ${breakdown.length <= 1 ? 'disabled' : ''}>
                           ${renderIcon('trash', 14)}
                         </button>
                       </div>
@@ -7662,7 +7651,7 @@ function openManageExpenseCategoriesModal() {
             ${categories.map(cat => `
               <div style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-secondary);border:1px solid var(--border-light);padding:5px 12px;border-radius:20px;font-size:0.88rem;font-weight:700;color:var(--color-brown);">
                 <span>${cat}</span>
-                <button type="button" class="btn-delete-exp-cat" data-category="${cat}" title="Delete Category" style="background:none;border:none;color:var(--color-danger);cursor:pointer;font-size:0.85rem;line-height:1;padding:0 2px;display:flex;align-items:center;">
+                <button type="button" class="btn-delete-exp-cat" data-category="${cat}" title="Delete Category" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.85rem;line-height:1;padding:0 2px;display:flex;align-items:center;">
                   ${renderIcon('x', 13)}
                 </button>
               </div>
@@ -7776,7 +7765,7 @@ function openPromotionModal(promo = null) {
           </div>
 
           <!-- Free Gift Selection Fields -->
-          <div id="promo-gift-group" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:var(--radius-md);padding:12px;margin-bottom:12px;">
+          <div id="promo-gift-group" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;margin-bottom:12px;">
             <div style="font-size:0.78rem;font-weight:700;color:#92400e;margin-bottom:8px;text-transform:uppercase;">
               🎁 Free Gift Reward Configuration
             </div>
@@ -7940,7 +7929,7 @@ function openEditRecipeModal(bundleProductId) {
                   `).join('')}
                 </select>
                 <input type="number" class="form-input recipe-qty-input number-input" min="1" value="${r.quantity}" style="width:75px;">
-                <button type="button" class="btn btn-sm btn-secondary btn-remove-row" style="color:var(--color-danger);">${renderIcon('trash', 14)}</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-remove-row" style="color:var(--text-muted);">${renderIcon('trash', 14)}</button>
               </div>
             `).join('')}
           </div>
@@ -7979,7 +7968,7 @@ function openEditRecipeModal(bundleProductId) {
         ${physicalItems.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
       </select>
       <input type="number" class="form-input recipe-qty-input number-input" min="1" value="1" style="width:75px;">
-      <button type="button" class="btn btn-sm btn-secondary btn-remove-row" style="color:var(--color-danger);">${renderIcon('trash', 14)}</button>
+      <button type="button" class="btn btn-sm btn-secondary btn-remove-row" style="color:var(--text-muted);">${renderIcon('trash', 14)}</button>
     `;
     rowsContainer.appendChild(row);
   });
@@ -8027,7 +8016,7 @@ function openRestoreConfirmModal(validated, rawData) {
             </div>
           </div>
 
-          <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:var(--radius-md);padding:12px;font-size:0.82rem;color:#b45309;margin-bottom:14px;">
+          <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;font-size:0.82rem;color:var(--color-brown-dark);margin-bottom:14px;">
             Warning: Restoring will overwrite existing browser data with this backup.
           </div>
         </div>
@@ -8199,8 +8188,8 @@ function openManageDisplayModal(preselectedProductId = '') {
                 </div>
                 <div style="border-right:1px solid var(--border-light);"></div>
                 <div>
-                  <div style="font-size:0.75rem;color:#0369a1;font-weight:600;">Stall Display (当前展品)</div>
-                  <div style="font-size:1.35rem;font-weight:700;color:#0369a1;">${onDisplay}</div>
+                  <div style="font-size:0.75rem;color:var(--color-brown);font-weight:600;">Stall Display (当前展品)</div>
+                  <div style="font-size:1.35rem;font-weight:700;color:var(--color-brown);">${onDisplay}</div>
                 </div>
                 <div style="border-right:1px solid var(--border-light);"></div>
                 <div>
@@ -8224,7 +8213,7 @@ function openManageDisplayModal(preselectedProductId = '') {
                 <label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);cursor:pointer;background:#ffffff;">
                   <input type="radio" name="display-action" value="return_to_stock" style="margin-top:3px;">
                   <div>
-                    <div style="font-weight:700;font-size:0.88rem;color:#0369a1;">📦 Return Display to Stock (展品收回入库)</div>
+                    <div style="font-weight:700;font-size:0.88rem;color:var(--color-brown);">📦 Return Display to Stock (展品收回入库)</div>
                     <div style="font-size:0.78rem;color:var(--text-muted);">Return table tester back to sellable inventory (Display → Sellable)</div>
                   </div>
                 </label>
@@ -8232,7 +8221,7 @@ function openManageDisplayModal(preselectedProductId = '') {
                 <label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);cursor:pointer;background:#ffffff;">
                   <input type="radio" name="display-action" value="scrap_display" style="margin-top:3px;">
                   <div>
-                    <div style="font-weight:700;font-size:0.88rem;color:var(--color-danger);">⚠️ Scrap Worn Display (展品老化/损坏报废)</div>
+                    <div style="font-weight:700;font-size:0.88rem;color:var(--color-brown-dark);">⚠️ Scrap Worn Display (展品老化/损坏报废)</div>
                     <div style="font-size:0.78rem;color:var(--text-muted);">Discard worn display sample & record financial loss to Expenses</div>
                   </div>
                 </label>
@@ -8250,8 +8239,8 @@ function openManageDisplayModal(preselectedProductId = '') {
               </div>
             </div>
 
-            <div id="scrap-expense-container" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-sm);padding:10px;margin-top:8px;">
-              <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;font-weight:600;color:var(--color-danger);cursor:pointer;">
+            <div id="scrap-expense-container" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px;margin-top:8px;">
+              <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;font-weight:600;color:var(--color-brown);cursor:pointer;">
                 <input type="checkbox" id="display-record-expense-chk" checked>
                 <span>Record loss <strong id="scrap-loss-amount-text">RM 0.00</strong> to Expenses (Defect & Wastage)</span>
               </label>
