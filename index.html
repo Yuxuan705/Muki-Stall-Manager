@@ -2763,6 +2763,32 @@ async function adjustStock({ productId, adjustmentType, quantity, notes, recordA
 
   product.stock = newStock;
   product.updated_at = timestamp;
+
+  // Keep FIFO batches synchronized with manual stock adjustment
+  if (Array.isArray(product.cost_batches) && product.cost_batches.length > 0) {
+    if (product.cost_batches.length === 1) {
+      product.cost_batches[0].remaining_qty = newStock;
+      product.cost_batches[0].initial_qty = Math.max(Number(product.cost_batches[0].initial_qty) || 0, newStock);
+    } else {
+      if (delta > 0) {
+        const lastBatch = product.cost_batches[product.cost_batches.length - 1];
+        lastBatch.remaining_qty = (Number(lastBatch.remaining_qty) || 0) + delta;
+        lastBatch.initial_qty = (Number(lastBatch.initial_qty) || 0) + delta;
+      } else if (delta < 0) {
+        let toDed = Math.abs(delta);
+        for (const b of product.cost_batches) {
+          const rem = Number(b.remaining_qty) || 0;
+          if (rem > 0) {
+            const take = Math.min(toDed, rem);
+            b.remaining_qty = rem - take;
+            toDed -= take;
+            if (toDed <= 0) break;
+          }
+        }
+      }
+    }
+  }
+
   await db.putItem('products', product);
 
   const unitCost = Number(product.cost) || 0;
@@ -8029,11 +8055,27 @@ function attachEventListeners() {
     btnClearOrdersMovements.addEventListener('click', async () => {
       const orderCount = store.orders.length;
       const movCount = store.stockMovements.length;
-      if (confirm(`Are you sure you want to clear all ${orderCount} test sales orders and ${movCount} stock movement logs?\n\nYour product catalog, prices, and stock counts will remain safe.`)) {
+      if (confirm(`Are you sure you want to clear all ${orderCount} test sales orders and ${movCount} stock movement logs?\n\nThis will also restore any FIFO batches deducted during testing back to your full product stock counts.`)) {
         await db.clearStore('orders');
         await db.clearStore('stock_movements');
+        for (const p of store.products) {
+          if (store.isBundleProduct(p.id)) continue;
+          const stock = Math.max(0, Number(p.stock) || 0);
+          if (Array.isArray(p.cost_batches) && p.cost_batches.length > 0) {
+            if (p.cost_batches.length === 1) {
+              p.cost_batches[0].remaining_qty = stock;
+              p.cost_batches[0].initial_qty = Math.max(Number(p.cost_batches[0].initial_qty) || 0, stock);
+            } else {
+              const sumRem = p.cost_batches.reduce((s, b) => s + Math.max(0, Number(b.remaining_qty) || 0), 0);
+              if (sumRem < stock) {
+                p.cost_batches[0].remaining_qty = Math.max(0, (Number(p.cost_batches[0].remaining_qty) || 0) + (stock - sumRem));
+              }
+            }
+            await db.putItem('products', p);
+          }
+        }
         await store.refreshAll();
-        showToast('All test orders and stock movement logs cleared!', 'success');
+        showToast('All test orders cleared and batches restored to stock counts!', 'success');
         renderApp();
       }
     });
@@ -8149,14 +8191,22 @@ function openInventoryTallyModal() {
         </div>
         <div class="modal-body" style="overflow-y:auto;max-height:calc(88vh - 120px);padding:16px;">
           
-          <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-left:4px solid var(--color-brown);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px;">
-            <div style="font-size:0.75rem;font-weight:700;color:var(--color-brown);text-transform:uppercase;">
-              How Total Inventory Cost is Calculated:
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;background:var(--bg-secondary);border:1px solid var(--border-light);border-left:4px solid var(--color-brown);border-radius:var(--radius-sm);padding:12px 14px;">
+            <div style="flex:1;min-width:280px;">
+              <div style="font-size:0.75rem;font-weight:700;color:var(--color-brown);text-transform:uppercase;">
+                How Total Inventory Cost is Calculated:
+              </div>
+              <div style="font-size:0.8rem;color:var(--text-main);margin-top:4px;line-height:1.45;">
+                This figure represents the exact sum of capital invested in all physical merchandise currently in stock: 
+                <strong>(Remaining Pieces &times; Unit Batch Cost)</strong>. 
+                If test sales previously deducted batch pieces, click <strong>Sync Batches to Stock</strong> to align all batch pieces with your full stock count.
+              </div>
             </div>
-            <div style="font-size:0.8rem;color:var(--text-main);margin-top:4px;line-height:1.45;">
-              This figure represents the exact sum of capital invested in all physical merchandise currently in stock: 
-              <strong>(Remaining Pieces &times; Unit Batch Cost)</strong> for each item. 
-              Review the itemized breakdown below to tally with your bank/cash outlay or adjust any test entries.
+            <div>
+              <button type="button" class="btn btn-secondary" id="btn-sync-all-batches-to-stock" style="font-weight:700;color:var(--color-brown);border-color:var(--color-brown);padding:6px 14px;white-space:nowrap;background:#ffffff;">
+                ${renderIcon('refresh', 14)}
+                <span>Sync Batches to Stock</span>
+              </button>
             </div>
           </div>
 
@@ -8261,6 +8311,43 @@ function openInventoryTallyModal() {
       if (prod) openQuickCostModal(prod);
     });
   });
+
+  const btnSyncAll = document.getElementById('btn-sync-all-batches-to-stock');
+  if (btnSyncAll) {
+    btnSyncAll.addEventListener('click', async () => {
+      for (const p of store.products) {
+        if (store.isBundleProduct(p.id)) continue;
+        const stock = Math.max(0, Number(p.stock) || 0);
+        const cost = Number(p.cost) || 0;
+        if (!Array.isArray(p.cost_batches) || p.cost_batches.length <= 1) {
+          p.cost_batches = [{
+            id: 'batch_' + p.id + '_synced',
+            date: p.date || new Date().toISOString().split('T')[0],
+            initial_qty: stock,
+            remaining_qty: stock,
+            unit_cost: cost,
+            cost_breakdown: Array.isArray(p.cost_breakdown) ? p.cost_breakdown : [],
+            notes: 'Synchronized with physical stock'
+          }];
+          p.cost = cost;
+          await db.putItem('products', p);
+        } else {
+          const sumRem = p.cost_batches.reduce((s, b) => s + Math.max(0, Number(b.remaining_qty) || 0), 0);
+          if (sumRem !== stock) {
+            const diff = stock - sumRem;
+            const firstActive = p.cost_batches.find(b => (Number(b.remaining_qty) || 0) > 0) || p.cost_batches[0];
+            firstActive.remaining_qty = Math.max(0, (Number(firstActive.remaining_qty) || 0) + diff);
+            firstActive.initial_qty = Math.max(Number(firstActive.initial_qty) || 0, firstActive.remaining_qty);
+            await db.putItem('products', p);
+          }
+        }
+      }
+      await store.refreshAll();
+      showToast('All batch quantities synchronized with current stock counts!', 'success');
+      openInventoryTallyModal();
+      renderApp();
+    });
+  }
 }
 
 // =========================================================
@@ -9399,6 +9486,23 @@ function openProductModal(prod = null) {
         updated_at: timestamp
       };
 
+      // Keep FIFO batches in sync when product stock or cost is edited
+      if (Array.isArray(productRecord.cost_batches) && productRecord.cost_batches.length > 0) {
+        if (productRecord.cost_batches.length === 1) {
+          productRecord.cost_batches[0].remaining_qty = stock;
+          productRecord.cost_batches[0].initial_qty = Math.max(Number(productRecord.cost_batches[0].initial_qty) || 0, stock);
+          productRecord.cost_batches[0].unit_cost = cost;
+        } else {
+          const totalBatchRem = productRecord.cost_batches.reduce((sum, b) => sum + Math.max(0, Number(b.remaining_qty) || 0), 0);
+          if (totalBatchRem !== stock) {
+            const diff = stock - totalBatchRem;
+            const firstActive = productRecord.cost_batches.find(b => (Number(b.remaining_qty) || 0) > 0) || productRecord.cost_batches[0];
+            firstActive.remaining_qty = Math.max(0, (Number(firstActive.remaining_qty) || 0) + diff);
+            firstActive.initial_qty = Math.max(Number(firstActive.initial_qty) || 0, firstActive.remaining_qty);
+          }
+        }
+      }
+
       await db.putItem('products', productRecord);
 
       // If new product and has cost or breakdown, log initial cost history entry
@@ -9565,6 +9669,11 @@ function openQuickCostModal(prod) {
                           </div>
 
                           <div style="display:flex;gap:6px;align-items:center;">
+                            ${(Number(b.remaining_qty) !== Number(prod.stock) && batches.length === 1) ? `
+                              <button type="button" class="btn btn-sm btn-secondary btn-sync-single-batch" data-batch-id="${b.id}" style="font-size:0.72rem;padding:2px 8px;color:var(--color-brown);font-weight:700;" title="Reset batch pieces to match total stock count">
+                                Sync to Stock (${prod.stock} pcs)
+                              </button>
+                            ` : ''}
                             <button type="button" class="btn btn-sm btn-secondary btn-edit-batch" data-batch-id="${b.id}" style="font-size:0.72rem;padding:2px 8px;">
                               Edit
                             </button>
@@ -9808,6 +9917,27 @@ function openQuickCostModal(prod) {
         const idx = parseInt(btn.getAttribute('data-idx'), 10);
         newBatchBreakdown.splice(idx, 1);
         renderModalContent();
+      });
+    });
+
+    // Quick sync single batch to product stock
+    container.querySelectorAll('.btn-sync-single-batch').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const batchId = btn.getAttribute('data-batch-id');
+        const b = batches.find(item => item.id === batchId);
+        if (b) {
+          b.remaining_qty = Number(prod.stock) || 0;
+          b.initial_qty = Math.max(Number(b.initial_qty) || 0, b.remaining_qty);
+          b.unit_cost = Number(prod.cost) || 0;
+          const product = await db.getById('products', prod.id);
+          if (product) {
+            product.cost_batches = batches;
+            await db.putItem('products', product);
+            await store.refreshAll();
+            showToast(`Batch synchronized to ${prod.stock} pcs at RM ${Number(prod.cost || 0).toFixed(2)}`, 'success');
+          }
+          renderModalContent();
+        }
       });
     });
 
