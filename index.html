@@ -2464,7 +2464,7 @@ async function saveRecipe(parentProductId, components) {
 
 
 /**
- * Manage Stall Display Samples (摆摊展示样品管理)
+ * Manage Stall Display Samples
  * Actions:
  * - 'take_for_display': Move quantity from sellable stock to display_stock
  * - 'return_to_stock': Return display_stock back to sellable stock
@@ -2497,7 +2497,7 @@ async function manageDisplaySample({ productId, action, quantity = 1, notes = ''
       previous_stock: currentSellable,
       new_stock: product.stock,
       reason: 'display_take',
-      notes: notes ? `${notes} (Set aside ${numQty} for stall display)` : `Moved ${numQty} unit(s) to stall display sample (展品摆样)`,
+      notes: notes ? `${notes} (Set aside ${numQty} for stall display)` : `Moved ${numQty} unit(s) to stall display sample`,
       timestamp
     });
   } else if (action === 'return_to_stock') {
@@ -2517,7 +2517,7 @@ async function manageDisplaySample({ productId, action, quantity = 1, notes = ''
       previous_stock: currentSellable,
       new_stock: product.stock,
       reason: 'display_return',
-      notes: notes ? `${notes} (Returned ${numQty} display sample to stock)` : `Returned ${numQty} display sample(s) back to sellable stock (收回展品)`,
+      notes: notes ? `${notes} (Returned ${numQty} display sample to stock)` : `Returned ${numQty} display sample(s) back to sellable stock`,
       timestamp
     });
   } else if (action === 'scrap_display') {
@@ -2534,7 +2534,7 @@ async function manageDisplaySample({ productId, action, quantity = 1, notes = ''
       await db.addItem('expenses', {
         id: generateId('exp'),
         date: today,
-        name: `Display Scrapped: ${numQty}x ${product.name} (样品报废)`,
+        name: `Display Scrapped: ${numQty}x ${product.name}`,
         category: 'Defect & Wastage',
         amount: loss,
         notes: notes ? `${notes} (Display sample retired @ RM${unitCost.toFixed(2)}/ea)` : `Display sample worn out / retired (-${numQty} pcs)`,
@@ -3496,7 +3496,7 @@ async function runAllTests() {
   const results = [];
   const log = (name, passed, details = '') => {
     results.push({ name, passed, details });
-    console.log(`[TEST] ${passed ? '✓ PASS' : '✗ FAIL'}: ${name} - ${details}`);
+    console.log(`[TEST] ${passed ? 'PASS' : 'FAIL'}: ${name} - ${details}`);
   };
 
   try {
@@ -4227,8 +4227,8 @@ function renderPos() {
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:0.75rem;">
                     <span style="color:${isOut ? 'var(--text-muted)' : available <= 5 ? 'var(--color-orange)' : 'var(--text-muted)'};font-weight:600;">
                       ${isOut 
-                        ? (prod.display_stock > 0 ? `0 for sale (👁️ ${prod.display_stock} Display)` : 'Out of stock') 
-                        : `${available} in stock${prod.display_stock > 0 ? ` (+${prod.display_stock} 👁️)` : ''}`}
+                        ? (prod.display_stock > 0 ? `0 for sale (${prod.display_stock} Display Sample)` : 'Out of stock') 
+                        : `${available} in stock${prod.display_stock > 0 ? ` (+${prod.display_stock} Display)` : ''}`}
                     </span>
                     ${cartQty > 0 ? `
                       <span class="badge" style="background:var(--color-brown);color:white;padding:2px 7px;">
@@ -4258,7 +4258,7 @@ function renderPos() {
           </div>
           <div style="display:flex;gap:6px;align-items:center;">
             <button type="button" class="btn btn-sm btn-secondary" data-action="pos-open-add-gift-modal" title="Add free customer gift" style="font-size:0.75rem;padding:3px 8px;border-radius:14px;color:var(--color-brown-dark);font-weight:700;background:var(--bg-secondary);">
-              🎁 Add Gift
+              Add Gift
             </button>
             ${store.cart.length > 0 ? `
               <button type="button" class="btn btn-sm btn-secondary" data-action="pos-clear-cart" style="color:var(--color-danger);padding:3px 8px;">
@@ -4282,7 +4282,7 @@ function renderPos() {
                 <div style="flex:1;padding-right:8px;">
                   <div style="font-weight:700;font-size:0.92rem;color:var(--color-brown-dark);display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
                     <span>${item.product?.name || item.name}</span>
-                    ${item.isFreeGift ? '<span class="badge" style="background:var(--color-orange);color:#fff;font-size:0.65rem;font-weight:700;padding:1px 6px;">🎁 Free Gift</span>' : ''}
+                    ${item.isFreeGift ? '<span class="badge" style="background:var(--color-orange);color:#fff;font-size:0.65rem;font-weight:700;padding:1px 6px;">Free Gift</span>' : ''}
                   </div>
                   
                   <!-- Editable Price on the fly & Free Gift Button -->
@@ -4300,7 +4300,7 @@ function renderPos() {
                       data-cart-item-id="${item.cartItemId || item.productId}"
                       title="${item.isFreeGift ? 'Free Gift (Price RM0)' : 'Mark as Free Gift'}"
                       style="padding:2px 8px;font-size:0.72rem;height:26px;border-radius:13px;display:inline-flex;align-items:center;gap:3px;${item.isFreeGift ? 'background:var(--color-orange);border-color:var(--color-orange);color:#fff;font-weight:700;' : ''}">
-                      <span>🎁 ${item.isFreeGift ? 'Gift (RM0)' : 'Gift'}</span>
+                      <span>${item.isFreeGift ? 'Gift (RM0)' : 'Gift'}</span>
                     </button>
 
                     ${item.isCustomPrice && !item.isFreeGift ? '<span class="badge badge-bundle" style="font-size:0.65rem;padding:1px 5px;">Custom Price</span>' : ''}
@@ -4333,12 +4333,12 @@ function renderPos() {
           ${qualifiedThresholdPromo ? `
             <div style="margin-bottom:10px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:8px 10px;display:flex;justify-content:space-between;align-items:center;gap:6px;">
               <div style="font-size:0.8rem;color:var(--color-brown-dark);line-height:1.25;">
-                <span style="font-weight:700;">🎉 Offer Unlocked (Min RM${qualifiedThresholdPromo.min_spend})!</span><br>
+                <span style="font-weight:700;">Offer Unlocked (Min RM${qualifiedThresholdPromo.min_spend})</span><br>
                 <span>${qualifiedThresholdPromo.name}</span>
               </div>
               ${qualifiedThresholdPromo.type === 'spend_threshold_gift' && qualifiedThresholdPromo.gift_product_id ? `
                 <button type="button" class="btn btn-sm btn-primary" data-action="pos-claim-threshold-gift" data-gift-id="${qualifiedThresholdPromo.gift_product_id}" data-gift-qty="${qualifiedThresholdPromo.gift_quantity || 1}" style="font-size:0.72rem;padding:3px 8px;background:var(--color-orange);border-color:var(--color-orange);white-space:nowrap;font-weight:700;">
-                  🎁 Add Gift
+                  Add Gift
                 </button>
               ` : ''}
             </div>
@@ -4546,7 +4546,7 @@ function renderPromotions() {
                               ? `-${promo.value}%`
                               : promo.type === 'spend_threshold_discount'
                                 ? (promo.discount_type === 'percent' ? `-${promo.value}%` : `-${formatRM(promo.value)}`)
-                                : '🎁 Free Gift'}
+                                : 'Free Gift'}
                       </div>
                       <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">
                         ${promo.type === 'bundle_price' ? 'Bundle Price' : promo.type === 'spend_threshold_gift' ? `Spend Min RM${promo.min_spend || 0}` : promo.type === 'spend_threshold_discount' ? `Spend Min RM${promo.min_spend || 0}` : 'Discount'}
@@ -4556,14 +4556,14 @@ function renderPromotions() {
 
                   ${promo.type === 'spend_threshold_gift' && promo.gift_product_id ? `
                     <div style="margin-top:12px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 12px;font-size:0.85rem;color:var(--color-brown-dark);">
-                      🎁 Free Gift: <strong>${store.products.find(p => p.id === promo.gift_product_id)?.name || 'Gift item'}</strong> (x${promo.gift_quantity || 1})
+                      Free Gift: <strong>${store.products.find(p => p.id === promo.gift_product_id)?.name || 'Gift item'}</strong> (x${promo.gift_quantity || 1})
                       <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Triggered when customer spends RM${promo.min_spend || 0} or more</div>
                     </div>
                   ` : ''}
 
                   ${promo.type === 'spend_threshold_discount' ? `
                     <div style="margin-top:12px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 12px;font-size:0.85rem;color:var(--color-brown-dark);">
-                      🏷️ Spend Offer: Spend <strong>RM${promo.min_spend || 0}</strong> and get <strong>${promo.discount_type === 'percent' ? promo.value + '% off' : 'RM' + promo.value + ' off'}</strong>!
+                      Spend Offer: Spend <strong>RM${promo.min_spend || 0}</strong> and get <strong>${promo.discount_type === 'percent' ? promo.value + '% off' : 'RM' + promo.value + ' off'}</strong>!
                     </div>
                   ` : ''}
 
@@ -5020,11 +5020,11 @@ function renderInventory() {
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button type="button" class="btn btn-secondary" data-action="open-manage-display-modal">
             ${renderIcon('package', 16)}
-            <span>Display Samples / 展品样板</span>
+            <span>Display Samples</span>
           </button>
           <button type="button" class="btn btn-secondary" data-action="open-record-defect-modal">
             ${renderIcon('alert', 16)}
-            <span>Record Defect / 制作损耗</span>
+            <span>Record Defect</span>
           </button>
           <button type="button" class="btn btn-primary" data-action="open-stock-adjust-modal">
             ${renderIcon('plus', 16)}
@@ -5089,7 +5089,7 @@ function renderStockTab(products) {
                 <tr class="draggable-product-row" draggable="true" data-product-id="${prod.id}" data-product-name="${(prod.name || '').replace(/"/g, '&quot;')}" data-idx="${idx}">
                   <td data-label="Order" style="text-align:center;white-space:nowrap;">
                     <div style="display:inline-flex;align-items:center;gap:6px;justify-content:center;">
-                      <span class="drag-handle" title="Drag to reorder / 拖拽排序" data-product-id="${prod.id}" data-idx="${idx}">⠿</span>
+                      <span class="drag-handle" title="Drag to reorder" data-product-id="${prod.id}" data-idx="${idx}">⠿</span>
                       <span style="font-size:0.85rem;font-weight:700;color:var(--text-muted);min-width:18px;text-align:center;">${idx + 1}</span>
                     </div>
                   </td>
@@ -5112,7 +5112,7 @@ function renderStockTab(products) {
                   <td data-label="Physical Stock" class="num" style="text-align:right;font-weight:600;font-size:0.95rem;">
                     <div>${isBundle ? '<span style="color:var(--text-light);font-weight:normal;">Auto-assembled</span>' : directStock}</div>
                     ${!isBundle && (prod.display_stock > 0) ? `
-                      <span class="badge badge-outline" style="font-size:0.65rem;font-weight:700;margin-top:2px;display:inline-block;" title="Stall Display Sample">👁️ ${prod.display_stock} Display</span>
+                      <span class="badge badge-outline" style="font-size:0.65rem;font-weight:700;margin-top:2px;display:inline-block;" title="Stall Display Sample">${prod.display_stock} Display</span>
                     ` : ''}
                   </td>
                   <td data-label="Available" class="num" style="text-align:right;font-weight:700;font-size:1.05rem;color:${available <= 5 ? 'var(--color-danger)' : 'var(--color-brown);'};">
@@ -5125,7 +5125,7 @@ function renderStockTab(products) {
                     ${!isBundle ? `
                       <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">
                         <button type="button" class="btn btn-sm btn-secondary" data-action="open-manage-display-modal" data-product-id="${prod.id}" style="padding:2px 7px;font-size:0.75rem;" title="Manage Stall Display Samples">
-                          👁️ Display (${prod.display_stock || 0})
+                          Display (${prod.display_stock || 0})
                         </button>
                         <button type="button" class="btn btn-sm btn-secondary" data-action="quick-adjust-stock" data-product-id="${prod.id}" style="padding:2px 7px;font-size:0.75rem;">
                           Stock
@@ -5218,7 +5218,7 @@ function renderMovementsTab(movements, products) {
                         m.reason === 'receipt' ? 'badge-active' :
                         'badge-cancelled'
                       }">
-                        ${m.reason === 'damaged' ? 'Defect / 损坏' : m.reason}
+                        ${m.reason === 'damaged' ? 'Defect' : m.reason}
                       </span>
                       ${m.loss_amount > 0 ? `<div style="font-size:0.75rem;color:var(--color-danger);font-weight:700;margin-top:2px;">Loss: ${formatRM(m.loss_amount)}</div>` : ''}
                     </td>
@@ -5481,7 +5481,7 @@ function renderProductList(products) {
                 <tr class="draggable-product-row" draggable="true" data-product-id="${p.id}" data-product-name="${(p.name || '').replace(/"/g, '&quot;')}" data-idx="${idx}" style="${!p.is_active ? 'opacity:0.55;background:#fafafa;' : ''}">
                   <td data-label="Order" style="text-align:center;white-space:nowrap;">
                     <div style="display:inline-flex;align-items:center;gap:6px;justify-content:center;">
-                      <span class="drag-handle" title="Drag to reorder / 拖拽排序" data-product-id="${p.id}" data-idx="${idx}">⠿</span>
+                      <span class="drag-handle" title="Drag to reorder" data-product-id="${p.id}" data-idx="${idx}">⠿</span>
                       <span style="font-size:0.85rem;font-weight:700;color:var(--text-muted);min-width:18px;text-align:center;">${idx + 1}</span>
                     </div>
                   </td>
@@ -5502,14 +5502,14 @@ function renderProductList(products) {
                     <div style="font-weight:700;color:var(--text-main);">${formatRM(computedCost)}</div>
                     ${p.cost_breakdown && p.cost_breakdown.length > 0 ? `
                       <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);font-size:0.65rem;font-weight:600;padding:1px 5px;margin-top:2px;display:inline-block;cursor:pointer;" data-action="quick-edit-cost" data-product-id="${p.id}" title="Click to view material and packaging breakdown">
-                        📋 ${p.cost_breakdown.length} items
+                        ${p.cost_breakdown.length} items
                       </span>
                     ` : ''}
                   </td>
                   <td data-label="Stock" class="num" style="text-align:right;font-weight:600;">
                     ${isBundle ? '<span style="color:var(--text-light);font-size:0.8rem;">(Formula)</span>' : (Number(p.stock) || 0)}
                     ${!isBundle && (p.display_stock > 0) ? `
-                      <div><span class="badge badge-outline" style="font-size:0.65rem;font-weight:700;padding:1px 5px;margin-top:2px;display:inline-block;" title="Stall Display Sample">👁️ ${p.display_stock} Display</span></div>
+                      <div><span class="badge badge-outline" style="font-size:0.65rem;font-weight:700;padding:1px 5px;margin-top:2px;display:inline-block;" title="Stall Display Sample">${p.display_stock} Display</span></div>
                     ` : ''}
                   </td>
                   <td data-label="Type" style="text-align:center;">
@@ -5702,7 +5702,7 @@ function renderBackup() {
 
             <a href="https://github.com/settings/tokens/new?scopes=gist&description=Muki+Stall+Manager+Sync" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary" style="background:#fff;border-color:#C084FC;color:#6B21A8;font-weight:600;margin-bottom:14px;text-decoration:none;display:inline-flex;">
               ${renderIcon('plus', 14)}
-              <span>👉 Open GitHub to Generate Token (Pre-configured)</span>
+              <span>Open GitHub to Generate Token (Pre-configured)</span>
             </a>
 
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
@@ -6080,7 +6080,7 @@ function attachEventListeners() {
       const qty = parseInt(btn.getAttribute('data-gift-qty'), 10) || 1;
       if (giftId) {
         store.addFreeGiftToCart(giftId, qty);
-        showToast('🎁 Free gift added to cart!', 'success');
+        showToast('Free gift added to cart!', 'success');
       }
     });
   });
@@ -6170,7 +6170,7 @@ function attachEventListeners() {
     });
   });
 
-  // Manual discount input (减多少)
+  // Manual discount input
   const manualDiscountInput = document.getElementById('pos-manual-discount-input');
   if (manualDiscountInput) {
     manualDiscountInput.addEventListener('change', (e) => {
@@ -6566,7 +6566,7 @@ function openOrderReceiptModal(order) {
             <div style="border-top:1px dashed #ccc;border-bottom:1px dashed #ccc;padding:8px 0;margin-bottom:10px;">
               ${(order.items || []).map(i => `
                 <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:4px;">
-                  <span>${i.isFreeGift ? '🎁 [Gift] ' : ''}${i.name} × ${i.quantity || i.qty}</span>
+                  <span>${i.isFreeGift ? '[Gift] ' : ''}${i.name} × ${i.quantity || i.qty}</span>
                   <span style="font-family:var(--font-mono);font-weight:${i.isFreeGift ? '700' : 'normal'};color:${i.isFreeGift ? 'var(--color-orange)' : 'inherit'};">${i.isFreeGift ? 'FREE' : formatRM(i.subtotal)}</span>
                 </div>
               `).join('')}
@@ -6840,7 +6840,7 @@ function openStockAdjustModal(preselectedProductId = '') {
           <!-- Defect Loss preview box -->
           <div id="adjust-loss-box" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:12px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-              <span style="font-size:0.8rem;color:#991b1b;font-weight:700;">⚠️ Defect Loss Calculation</span>
+              <span style="font-size:0.8rem;color:var(--color-brown-dark);font-weight:700;">Defect Loss Calculation</span>
               <span id="adjust-loss-amount" style="font-size:0.95rem;font-weight:800;color:var(--color-brown-dark);font-family:var(--font-mono);">RM 0.00</span>
             </div>
             <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:#7f1d1d;cursor:pointer;">
@@ -6959,11 +6959,11 @@ function openRecordDefectModal(preselectedProductId = '') {
             <div class="form-group">
               <label class="form-label">Defect Category</label>
               <select id="defect-cat-select" class="form-select">
-                <option value="Production Defect">Production Defect (制作瑕疵 / 印刷问题)</option>
-                <option value="Handling Damage">Handling Damage (机器/外力压坏)</option>
-                <option value="Packaging Defect">Packaging Defect (包装破损)</option>
-                <option value="Sample Scrapped">Display Sample Scrapped (样板报废)</option>
-                <option value="Lost / Other">Other Loss (其他损耗)</option>
+                <option value="Production Defect">Production Defect</option>
+                <option value="Handling Damage">Handling Damage</option>
+                <option value="Packaging Defect">Packaging Defect</option>
+                <option value="Sample Scrapped">Display Sample Scrapped</option>
+                <option value="Lost / Other">Other Loss</option>
               </select>
             </div>
           </div>
@@ -6989,7 +6989,7 @@ function openRecordDefectModal(preselectedProductId = '') {
 
           <div class="form-group">
             <label class="form-label">Defect Description / Notes</label>
-            <input type="text" id="defect-notes-input" class="form-input" placeholder="e.g. 机器压碎表面 / 掉色瑕疵无法出售">
+            <input type="text" id="defect-notes-input" class="form-input" placeholder="e.g. Scratched surface / print defect">
           </div>
         </div>
         <div class="modal-footer">
@@ -7066,7 +7066,7 @@ function openAddFreeGiftModal() {
       <div class="modal-card" style="max-width:440px;">
         <div class="modal-header">
           <div class="modal-title" style="display:flex;align-items:center;gap:6px;color:var(--color-brown-dark);">
-            <span>🎁</span>
+            
             <span>Add Free Customer Gift</span>
           </div>
           <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
@@ -7095,7 +7095,7 @@ function openAddFreeGiftModal() {
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" id="modal-gift-abort-btn">Cancel</button>
           <button type="button" class="btn btn-primary" id="modal-gift-submit-btn" style="background:var(--color-orange);border-color:var(--color-orange);">
-            🎁 Add Gift to Cart (RM0.00)
+            Add Gift to Cart (RM0.00)
           </button>
         </div>
       </div>
@@ -7110,7 +7110,7 @@ function openAddFreeGiftModal() {
     const qty = parseInt(document.getElementById('free-gift-qty-input').value, 10) || 1;
 
     store.addFreeGiftToCart(prodId, qty);
-    showToast('🎁 Free gift added to cart!', 'success');
+    showToast('Free gift added to cart!', 'success');
     closeModal();
   });
 }
@@ -7249,31 +7249,31 @@ function openProductModal(prod = null) {
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
                 <label class="form-label" style="margin-bottom:0;">Estimated Cost (RM)</label>
                 <button type="button" id="btn-toggle-bulk-calc" style="background:none;border:none;color:var(--color-brown);font-size:0.75rem;cursor:pointer;font-weight:700;padding:0;">
-                  🧮 批量进货换算 (100/1000个)
+                  Bulk Purchase Calculator (100/1000 pcs)
                 </button>
               </div>
               <input type="number" step="0.01" id="prod-cost-input" class="form-input number-input" value="${prod ? prod.cost : 0}">
               <!-- Bulk Purchase Calculator Helper -->
               <div id="bulk-calc-panel" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 10px;margin-top:6px;">
                 <div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:6px;">
-                  以 100/1000 个批量进货？输入总费用与总数，自动算单价：
+                  Bulk purchase? Enter total invoice cost and quantity to compute unit cost:
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
                   <div>
-                    <label style="font-size:0.68rem;color:var(--text-muted);display:block;">进货总额 (RM)</label>
+                    <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Total Cost (RM)</label>
                     <input type="number" step="0.10" id="quick-batch-cost" class="form-input" placeholder="e.g. 1500" style="padding:3px 6px;font-size:0.82rem;height:26px;">
                   </div>
                   <div>
-                    <label style="font-size:0.68rem;color:var(--text-muted);display:block;">进货总数 (个)</label>
+                    <label style="font-size:0.68rem;color:var(--text-muted);display:block;">Total Qty (pcs)</label>
                     <input type="number" step="1" id="quick-batch-qty" class="form-input" placeholder="e.g. 1000" style="padding:3px 6px;font-size:0.82rem;height:26px;">
                   </div>
                 </div>
                 <div style="margin-top:6px;display:flex;justify-content:space-between;align-items:center;">
                   <span style="font-size:0.8rem;font-weight:700;color:var(--color-brown);">
-                    折合: <strong id="quick-batch-result">RM 0.00</strong>/个
+                    Unit Cost: <strong id="quick-batch-result">RM 0.00</strong>/ea
                   </span>
                   <button type="button" class="btn btn-sm btn-primary" id="btn-apply-batch-calc" style="font-size:0.7rem;padding:2px 8px;">
-                    填入单价
+                    Apply Unit Cost
                   </button>
                 </div>
               </div>
@@ -7282,11 +7282,11 @@ function openProductModal(prod = null) {
 
           <div class="grid-2" id="prod-stock-group" style="${prod?.is_bundle ? 'display:none;' : ''}">
             <div class="form-group">
-              <label class="form-label">Sellable Stock (可售现货)</label>
+              <label class="form-label">Sellable Stock</label>
               <input type="number" id="prod-stock-input" class="form-input number-input" value="${prod ? (prod.stock ?? 0) : 0}">
             </div>
             <div class="form-group">
-              <label class="form-label">Display Sample (摊位展品)</label>
+              <label class="form-label">Display Sample</label>
               <input type="number" id="prod-display-stock-input" class="form-input number-input" value="${prod ? (prod.display_stock ?? 0) : 0}">
             </div>
           </div>
@@ -7393,7 +7393,7 @@ function openProductModal(prod = null) {
   });
 }
 
-// 6. Cost Breakdown & Packaging Calculator Modal (材料与批量进货成本核算)
+// 6. Cost Breakdown & Bulk Calculator Modal
 function openQuickCostModal(prod) {
   const container = document.getElementById('modal-container');
   if (!container) return;
@@ -7402,9 +7402,9 @@ function openQuickCostModal(prod) {
   let breakdown = Array.isArray(prod.cost_breakdown) && prod.cost_breakdown.length > 0 
     ? JSON.parse(JSON.stringify(prod.cost_breakdown)) 
     : [
-        { name: '主体商品/金属币', batch_cost: (prod.cost ? prod.cost * 1000 : 1500), batch_qty: 1000, unit_cost: prod.cost || 1.50, notes: '厂家批量订做' },
-        { name: '包装袋 (OPP/珠光袋)', batch_cost: 25, batch_qty: 500, unit_cost: 0.05, notes: '500个一包批发' },
-        { name: '封口贴纸/背卡', batch_cost: 20, batch_qty: 1000, unit_cost: 0.02, notes: '1000张一卷' }
+        { name: 'Main Product / Item', batch_cost: (prod.cost ? prod.cost * 1000 : 1500), batch_qty: 1000, unit_cost: prod.cost || 1.50, notes: 'Bulk factory order' },
+        { name: 'Packaging Bag', batch_cost: 25, batch_qty: 500, unit_cost: 0.05, notes: 'Wholesale 500 pcs/pack' },
+        { name: 'Backing Card / Sticker', batch_cost: 20, batch_qty: 1000, unit_cost: 0.02, notes: '1000 pcs roll' }
       ];
 
   function renderModalContent() {
@@ -7413,25 +7413,25 @@ function openQuickCostModal(prod) {
         <div class="modal-card" style="max-width:680px;width:95%;">
           <div class="modal-header">
             <div class="modal-title" style="display:flex;align-items:center;gap:6px;">
-              <span>📋</span>
-              <span>材料与批量进货成本核算 — ${prod.name}</span>
+              
+              <span>Cost Breakdown &amp; Bulk Calculator — ${prod.name}</span>
             </div>
             <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
           </div>
           <div class="modal-body" style="max-height:75vh;overflow-y:auto;">
             <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:14px;font-size:0.82rem;color:var(--color-brown-dark);line-height:1.45;">
-              💡 <strong>专为 100 / 1000 个批量采购设计</strong>：直接输入每种材料的<strong>进货总金额</strong>和<strong>采购总数</strong>，系统会自动为您精确折算出单件成本！
+              Designed for bulk batch purchasing (e.g. 100 or 1000 pcs). Enter total batch spend and quantity to calculate exact unit cost.
             </div>
 
             <!-- Material & Packaging Items Container -->
             <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;margin-bottom:14px;">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                 <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--color-brown);">
-                  材料及包装批次明细 (Material &amp; Packaging Components)
+                  Material &amp; Packaging Components
                 </span>
                 <button type="button" class="btn btn-sm btn-secondary" id="btn-add-cost-item" style="font-size:0.75rem;padding:3px 10px;background:#ffffff;">
                   ${renderIcon('plus', 12)}
-                  <span>+ 添加材料/配件</span>
+                  <span>+ Add Component</span>
                 </button>
               </div>
 
@@ -7446,26 +7446,26 @@ function openQuickCostModal(prod) {
                     <div class="cost-row" data-idx="${idx}" style="background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px;">
                       <div style="display:grid;grid-template-columns:1.8fr 1.2fr 1.2fr 1.2fr auto;gap:8px;align-items:center;">
                         <div>
-                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">材料/配件名称</label>
-                          <input type="text" class="form-input cost-item-name" value="${item.name || ''}" placeholder="e.g. 金属币 / 包装袋" style="padding:4px 6px;font-size:0.85rem;height:28px;">
+                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Component Name</label>
+                          <input type="text" class="form-input cost-item-name" value="${item.name || ''}" placeholder="e.g. Coin body / Packaging bag / Sticker" style="padding:4px 6px;font-size:0.85rem;height:28px;">
                         </div>
                         <div>
-                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">进货总花费 (RM)</label>
+                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Total Cost (RM)</label>
                           <input type="number" step="0.10" class="form-input cost-item-cost" value="${item.batch_cost ?? 0}" placeholder="e.g. 1500" style="padding:4px 6px;font-size:0.85rem;height:28px;">
                         </div>
                         <div>
-                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">进货总数量 (个/pcs)</label>
+                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Total Qty (pcs)</label>
                           <input type="number" step="1" min="1" class="form-input cost-item-qty" value="${item.batch_qty ?? 1000}" placeholder="e.g. 1000" style="padding:4px 6px;font-size:0.85rem;height:28px;">
                         </div>
                         <div style="text-align:right;">
-                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">折合单件成本</label>
+                          <label style="font-size:0.7rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:2px;">Unit Cost</label>
                           <span class="num cost-item-unit" style="font-weight:800;font-size:0.92rem;color:var(--color-brown);line-height:28px;display:inline-block;">
                             RM ${uCost < 0.1 && (uCost * 100) % 1 !== 0 ? uCost.toFixed(3) : uCost.toFixed(2)}
                           </span>
                         </div>
                         <div>
                           <label style="font-size:0.7rem;visibility:hidden;display:block;margin-bottom:2px;">Del</label>
-                          <button type="button" class="btn btn-sm btn-secondary btn-del-cost-item" data-idx="${idx}" style="padding:4px 6px;color:var(--text-muted);height:28px;" ${breakdown.length <= 1 ? 'disabled' : ''} title="删除此项">
+                          <button type="button" class="btn btn-sm btn-secondary btn-del-cost-item" data-idx="${idx}" style="padding:4px 6px;color:var(--text-muted);height:28px;" ${breakdown.length <= 1 ? 'disabled' : ''} title="Delete item">
                             ${renderIcon('trash', 14)}
                           </button>
                         </div>
@@ -7474,13 +7474,13 @@ function openQuickCostModal(prod) {
                       <!-- Quick batch quantity presets & notes -->
                       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:6px;border-top:1px dashed var(--border-light);gap:8px;flex-wrap:wrap;">
                         <div style="display:flex;gap:4px;align-items:center;">
-                          <span style="font-size:0.68rem;color:var(--text-muted);">快捷数量:</span>
-                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="100" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">100个</button>
-                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="200" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">200个</button>
-                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="500" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">500个</button>
-                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="1000" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">1000个</button>
+                          <span style="font-size:0.68rem;color:var(--text-muted);">Quick Qty:</span>
+                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="100" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">100 pcs</button>
+                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="200" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">200 pcs</button>
+                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="500" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">500 pcs</button>
+                          <button type="button" class="btn btn-sm btn-secondary btn-preset-qty" data-idx="${idx}" data-qty="1000" style="padding:1px 6px;font-size:0.7rem;line-height:1.2;">1000 pcs</button>
                         </div>
-                        <input type="text" class="form-input cost-item-notes" value="${item.notes || ''}" placeholder="进货批次备注 (e.g. 淘宝1000个起订 / 500包一批)" style="padding:2px 8px;font-size:0.75rem;height:24px;border-style:dashed;max-width:280px;flex:1;">
+                        <input type="text" class="form-input cost-item-notes" value="${item.notes || ''}" placeholder="Batch notes (e.g. Factory order batch #1)" style="padding:2px 8px;font-size:0.75rem;height:24px;border-style:dashed;max-width:280px;flex:1;">
                       </div>
                     </div>
                   `;
@@ -7490,13 +7490,13 @@ function openQuickCostModal(prod) {
               <!-- Computed Sum Banner -->
               <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--border-light);">
                 <div>
-                  <span style="font-size:0.82rem;color:var(--text-muted);font-weight:600;">单件累计成本 (Total Itemized Cost):</span>
+                  <span style="font-size:0.82rem;color:var(--text-muted);font-weight:600;">Total Itemized Cost:</span>
                   <span id="total-itemized-cost-display" class="num" style="font-size:1.25rem;font-weight:800;color:var(--color-brown);margin-left:8px;">
-                    RM 0.00 / 件
+                    RM 0.00 / unit
                   </span>
                 </div>
                 <button type="button" class="btn btn-sm btn-primary" id="btn-apply-computed-cost" style="font-size:0.75rem;padding:4px 12px;">
-                  ⚡ 同步至最终单件成本
+                  Apply to Final Unit Cost
                 </button>
               </div>
             </div>
@@ -7504,24 +7504,24 @@ function openQuickCostModal(prod) {
             <!-- Unit Cost Input -->
             <div class="grid-2">
               <div class="form-group">
-                <label class="form-label" style="font-weight:700;">最终单件成本 / Final Unit Cost (RM)</label>
+                <label class="form-label" style="font-weight:700;">Final Unit Cost (RM)</label>
                 <input type="number" step="0.01" id="new-cost-input" class="form-input number-input" value="${prod.cost || 0}" style="font-size:1.15rem;font-weight:700;color:var(--color-brown-dark);">
               </div>
               <div class="form-group">
-                <label class="form-label">成本变更说明 (Reason)</label>
-                <input type="text" id="cost-reason-input" class="form-input" placeholder="e.g. 进货批量换算（1000个金属币+包装）">
+                <label class="form-label">Cost Update Reason</label>
+                <input type="text" id="cost-reason-input" class="form-input" placeholder="e.g. Bulk purchase cost breakdown update">
               </div>
             </div>
 
             <div class="form-group">
-              <label class="form-label">通用备注 (General Notes)</label>
-              <textarea id="cost-notes-textarea" class="form-textarea" rows="2" placeholder="e.g. 进货包含：金属币1000个RM1500 + 包装袋500个RM25 + 贴纸1000个RM20">${prod.cost_notes || ''}</textarea>
+              <label class="form-label">General Cost Notes</label>
+              <textarea id="cost-notes-textarea" class="form-textarea" rows="2" placeholder="e.g. 1000 pcs main items RM1500 + 500 pcs bags RM25 + 1000 pcs stickers RM20">${prod.cost_notes || ''}</textarea>
             </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" id="modal-cost-abort-btn">Cancel</button>
             <button type="button" class="btn btn-primary" id="modal-cost-save-btn">
-              保存材料细项与单件成本
+              Save Cost Breakdown
             </button>
           </div>
         </div>
@@ -7551,7 +7551,7 @@ function openQuickCostModal(prod) {
 
       const totalDisplay = document.getElementById('total-itemized-cost-display');
       if (totalDisplay) {
-        totalDisplay.textContent = `RM ${total < 0.1 && (total * 100) % 1 !== 0 ? total.toFixed(3) : total.toFixed(2)} / 件`;
+        totalDisplay.textContent = `RM ${total < 0.1 && (total * 100) % 1 !== 0 ? total.toFixed(3) : total.toFixed(2)} / unit`;
       }
       return total;
     }
@@ -7570,7 +7570,7 @@ function openQuickCostModal(prod) {
         const idx = parseInt(btn.getAttribute('data-idx'), 10);
         breakdown.splice(idx, 1);
         if (breakdown.length === 0) {
-          breakdown.push({ name: '主体配件', batch_cost: 0, batch_qty: 1000, unit_cost: 0, notes: '' });
+          breakdown.push({ name: 'Component item', batch_cost: 0, batch_qty: 1000, unit_cost: 0, notes: '' });
         }
         renderModalContent();
       });
@@ -7605,7 +7605,7 @@ function openQuickCostModal(prod) {
       applyBtn.addEventListener('click', () => {
         const total = recalculateAll();
         document.getElementById('new-cost-input').value = total.toFixed(2);
-        showToast(`已填入单件折合成本: RM ${total.toFixed(2)}`, 'success');
+        showToast(`Unit cost applied: RM ${total.toFixed(2)}`, 'success');
       });
     }
 
@@ -7623,8 +7623,8 @@ function openQuickCostModal(prod) {
           product.cost_notes = costNotes;
           await db.putItem('products', product);
         }
-        await updateProductCost(prod.id, newCost, reason || '批量进货成本拆分与核算');
-        showToast('材料细项与单件成本已更新！', 'success');
+        await updateProductCost(prod.id, newCost, reason || 'Bulk purchase cost breakdown update');
+        showToast('Cost breakdown and unit cost saved!', 'success');
         closeModal();
       } catch (err) {
         alert(`Could not save cost: ${err.message}`);
@@ -7842,11 +7842,11 @@ function openPromotionModal(promo = null) {
             <div class="form-group">
               <label class="form-label">Promotion Type</label>
               <select id="promo-type-select" class="form-select">
-                <option value="bundle_price" ${promo?.type === 'bundle_price' ? 'selected' : ''}>Fixed Bundle Price (组合特价 RM)</option>
-                <option value="spend_threshold_gift" ${promo?.type === 'spend_threshold_gift' ? 'selected' : ''}>Spend Min RM X Get Free Gift (满额送赠品)</option>
-                <option value="spend_threshold_discount" ${promo?.type === 'spend_threshold_discount' ? 'selected' : ''}>Spend Min RM X Get Discount (满额立减/折)</option>
-                <option value="fixed_discount" ${promo?.type === 'fixed_discount' ? 'selected' : ''}>Order Fixed Discount (全单立减 -RM)</option>
-                <option value="percent_discount" ${promo?.type === 'percent_discount' ? 'selected' : ''}>Order Percentage Discount (全单折扣 -%)</option>
+                <option value="bundle_price" ${promo?.type === 'bundle_price' ? 'selected' : ''}>Fixed Bundle Price</option>
+                <option value="spend_threshold_gift" ${promo?.type === 'spend_threshold_gift' ? 'selected' : ''}>Spend Min RM X Get Free Gift</option>
+                <option value="spend_threshold_discount" ${promo?.type === 'spend_threshold_discount' ? 'selected' : ''}>Spend Min RM X Get Discount</option>
+                <option value="fixed_discount" ${promo?.type === 'fixed_discount' ? 'selected' : ''}>Order Fixed Discount</option>
+                <option value="percent_discount" ${promo?.type === 'percent_discount' ? 'selected' : ''}>Order Percentage Discount</option>
               </select>
             </div>
             
@@ -7877,7 +7877,7 @@ function openPromotionModal(promo = null) {
           <!-- Free Gift Selection Fields -->
           <div id="promo-gift-group" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;margin-bottom:12px;">
             <div style="font-size:0.78rem;font-weight:700;color:#92400e;margin-bottom:8px;text-transform:uppercase;">
-              🎁 Free Gift Reward Configuration
+              Free Gift Reward Configuration
             </div>
             <div class="grid-2">
               <div class="form-group" style="margin-bottom:0;">
@@ -8201,7 +8201,7 @@ function openTestSuiteModal() {
       ${results.map(r => `
         <div style="margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #eee;">
           <div style="font-weight:600;color:${r.passed ? 'var(--color-success)' : 'var(--color-danger)'};">
-            ${r.passed ? '✓ PASS' : '✗ FAIL'}: ${r.name}
+            ${r.passed ? 'PASS' : 'FAIL'}: ${r.name}
           </div>
           <div style="color:#666;font-size:0.75rem;">${r.details}</div>
         </div>
@@ -8245,7 +8245,7 @@ if (document.readyState === 'loading') {
 
 
 
-// 12. Stall Display Samples Management Modal (摆摊展品样板管理)
+// 12. Stall Display Samples Management Modal
 function openManageDisplayModal(preselectedProductId = '') {
   const container = document.getElementById('modal-container');
   if (!container) return;
@@ -8270,12 +8270,12 @@ function openManageDisplayModal(preselectedProductId = '') {
       <div class="modal-overlay">
         <div class="modal-card" style="max-width:520px;">
           <div class="modal-header">
-            <div class="modal-title">Stall Display Samples / 摊位展品管理</div>
+            <div class="modal-title">Stall Display Samples Management</div>
             <button type="button" class="btn btn-sm btn-secondary" id="modal-close-btn">${renderIcon('x', 16)}</button>
           </div>
           <div class="modal-body">
             <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:14px;line-height:1.4;">
-              Distinguish table display samples (摆摊样品/试用品) from sellable stock. Scrapped display units can automatically be recorded as operational defect loss.
+              Distinguish table display samples from sellable stock. Scrapped display samples can automatically be recorded as operational defect loss.
             </div>
 
             <div class="form-group">
@@ -8293,29 +8293,29 @@ function openManageDisplayModal(preselectedProductId = '') {
             <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px;margin-bottom:16px;">
               <div style="display:flex;justify-content:space-around;text-align:center;">
                 <div>
-                  <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">Sellable Stock (可售现货)</div>
+                  <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">Sellable Stock</div>
                   <div style="font-size:1.35rem;font-weight:700;color:var(--color-brown);">${sellable}</div>
                 </div>
                 <div style="border-right:1px solid var(--border-light);"></div>
                 <div>
-                  <div style="font-size:0.75rem;color:var(--color-brown);font-weight:600;">Stall Display (当前展品)</div>
+                  <div style="font-size:0.75rem;color:var(--color-brown);font-weight:600;">Stall Display</div>
                   <div style="font-size:1.35rem;font-weight:700;color:var(--color-brown);">${onDisplay}</div>
                 </div>
                 <div style="border-right:1px solid var(--border-light);"></div>
                 <div>
-                  <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">Unit Cost (成本)</div>
+                  <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">Unit Cost</div>
                   <div style="font-size:1.1rem;font-weight:700;color:var(--text-main);">${formatRM(unitCost)}</div>
                 </div>
               </div>
             </div>
 
             <div class="form-group">
-              <label class="form-label">Action / 选择操作</label>
+              <label class="form-label">Action</label>
               <div style="display:flex;flex-direction:column;gap:8px;">
                 <label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);cursor:pointer;background:#ffffff;">
                   <input type="radio" name="display-action" value="take_for_display" checked style="margin-top:3px;">
                   <div>
-                    <div style="font-weight:700;font-size:0.88rem;color:var(--color-brown);">📌 Take from Stock to Display (拿去摆样)</div>
+                    <div style="font-weight:700;font-size:0.88rem;color:var(--color-brown);">Take from Stock to Display</div>
                     <div style="font-size:0.78rem;color:var(--text-muted);">Move units from sellable stock to table display tester (Sellable → Display)</div>
                   </div>
                 </label>
@@ -8323,7 +8323,7 @@ function openManageDisplayModal(preselectedProductId = '') {
                 <label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);cursor:pointer;background:#ffffff;">
                   <input type="radio" name="display-action" value="return_to_stock" style="margin-top:3px;">
                   <div>
-                    <div style="font-weight:700;font-size:0.88rem;color:var(--color-brown);">📦 Return Display to Stock (展品收回入库)</div>
+                    <div style="font-weight:700;font-size:0.88rem;color:var(--color-brown);">Return Display to Stock</div>
                     <div style="font-size:0.78rem;color:var(--text-muted);">Return table tester back to sellable inventory (Display → Sellable)</div>
                   </div>
                 </label>
@@ -8331,7 +8331,7 @@ function openManageDisplayModal(preselectedProductId = '') {
                 <label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);cursor:pointer;background:#ffffff;">
                   <input type="radio" name="display-action" value="scrap_display" style="margin-top:3px;">
                   <div>
-                    <div style="font-weight:700;font-size:0.88rem;color:var(--color-brown-dark);">⚠️ Scrap Worn Display (展品老化/损坏报废)</div>
+                    <div style="font-weight:700;font-size:0.88rem;color:var(--color-brown-dark);">Scrap Worn Display</div>
                     <div style="font-size:0.78rem;color:var(--text-muted);">Discard worn display sample & record financial loss to Expenses</div>
                   </div>
                 </label>
@@ -8474,7 +8474,7 @@ function setupDraggableRows() {
       currentIds.splice(toIdx, 0, draggedId);
 
       await store.reorderProducts(currentIds);
-      showToast('Product order updated / 排序已更新', 'success');
+      showToast('Product order updated', 'success');
       renderApp();
     });
 
@@ -8505,7 +8505,7 @@ function setupDraggableRows() {
       // Create floating touch indicator
       touchIndicator = document.createElement('div');
       touchIndicator.className = 'touch-drag-indicator';
-      touchIndicator.textContent = `⠿ ${prodName}`;
+      touchIndicator.textContent = `Moving: ${prodName}`;
       touchIndicator.style.left = `${touch.clientX}px`;
       touchIndicator.style.top = `${touch.clientY}px`;
       document.body.appendChild(touchIndicator);
@@ -8575,7 +8575,7 @@ function setupDraggableRows() {
           currentIds.splice(toIdx, 0, touchDraggedId);
 
           await store.reorderProducts(currentIds);
-          showToast('Product order updated / 排序已更新', 'success');
+          showToast('Product order updated', 'success');
           renderApp();
         }
       }
