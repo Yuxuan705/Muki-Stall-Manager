@@ -1907,6 +1907,35 @@ async function clearStore(storeName) {
 }
 
 /**
+ * Atomic Clear & Bulk Put Items (in a single transaction)
+ * Used during full backup restore to prevent timing race conditions on mobile/Safari
+ */
+async function replaceStore(storeName, items) {
+  const safeItems = Array.isArray(items) ? items : [];
+  const db = await openDatabase();
+  if (!db || useLocalStorageFallback) {
+    setLocalStoreItems(storeName, safeItems);
+    return safeItems;
+  }
+
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction(storeName, 'readwrite');
+      const store = tx.objectStore(storeName);
+
+      store.clear();
+      safeItems.forEach(item => store.put(item));
+
+      tx.oncomplete = () => resolve(safeItems);
+      tx.onerror = () => reject(tx.error);
+    } catch (err) {
+      setLocalStoreItems(storeName, safeItems);
+      resolve(safeItems);
+    }
+  });
+}
+
+/**
  * Bulk Put Items (in a single transaction)
  */
 async function bulkPut(storeName, items) {
@@ -3551,6 +3580,7 @@ async function createBackupData() {
       exportTimestamp: timestamp,
       summary: {
         products: products.length,
+        totalStock: products.filter(p => !p.is_bundle).reduce((s, p) => s + (Number(p.stock) || 0), 0),
         recipes: recipes.length,
         promotions: promotions.length,
         orders: orders.length,
@@ -3603,6 +3633,7 @@ function validateBackupFile(parsedJson) {
     meta: parsedJson.meta || {},
     counts: {
       products: Array.isArray(data.products) ? data.products.length : 0,
+      totalStock: Array.isArray(data.products) ? data.products.filter(p => !p.is_bundle).reduce((s, p) => s + (Number(p.stock) || 0), 0) : 0,
       orders: Array.isArray(data.orders) ? data.orders.length : 0,
       promotions: Array.isArray(data.promotions) ? data.promotions.length : 0,
       expenses: Array.isArray(data.expenses) ? data.expenses.length : 0,
@@ -3642,10 +3673,10 @@ async function restoreFromBackup(backupData, mode = 'replace') {
     if (!items || !Array.isArray(items)) continue;
 
     if (mode === 'replace') {
-      await db.clearStore(name);
+      await db.replaceStore(name, items);
+    } else {
+      await db.bulkPut(name, items);
     }
-
-    await db.bulkPut(name, items);
   }
 
   // Restore this device's own github token and gistId
@@ -3801,7 +3832,7 @@ async function getGitHubConfig() {
 async function saveGitHubToken(token) {
   const cleaned = (token || '').trim();
   await db.putItem('settings', { key: 'github_token', value: cleaned });
-  // Always clear cached gistId when changing or resetting token so a fresh gist can be created/re-linked cleanly
+  // Clear cached gistId so it re-discovers the canonical gist cleanly
   await db.deleteItem('settings', 'github_gist_id');
   await store.refreshAll();
   return cleaned;
@@ -3830,7 +3861,35 @@ async function testGitHubToken(token) {
 }
 
 /**
+ * Find the latest active Muki Stall Manager gist across the user's account
+ */
+async function findLatestGistId(token) {
+  const gistsRes = await fetch('https://api.github.com/gists?per_page=100', {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.github+json'
+    }
+  });
+
+  if (!gistsRes.ok) {
+    if (gistsRes.status === 401) throw new Error('Invalid or expired GitHub Token (Bad credentials).');
+    throw new Error(`Failed to retrieve data from GitHub: HTTP ${gistsRes.status}`);
+  }
+
+  const gists = await gistsRes.json();
+  const matches = (gists || [])
+    .filter(g => (g.files && g.files[GIST_FILENAME]) || (g.description && g.description.includes('Muki Stall Manager')))
+    .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+
+  if (matches.length === 0) {
+    return null;
+  }
+  return matches[0].id;
+}
+
+/**
  * Upload current stall data to GitHub Secret Gist
+ * Always updates the existing canonical Muki Gist so all devices share the exact same cloud copy.
  */
 async function uploadToGitHub() {
   const config = await getGitHubConfig();
@@ -3847,10 +3906,15 @@ async function uploadToGitHub() {
     .replace(/ghp_[a-zA-Z0-9_]{20,}/g, 'FILTERED_SECRET')
     .replace(/github_pat_[a-zA-Z0-9_]{20,}/g, 'FILTERED_SECRET');
 
+  // Find canonical gist across account first so all devices update the SAME gist
   let gistId = config.gistId;
+  if (!gistId) {
+    gistId = await findLatestGistId(config.token).catch(() => null);
+  }
+
   let resultGist = null;
 
-  // 2. If a gistId is stored, try updating it with PATCH
+  // 2. If a gistId is found or stored, try updating it with PATCH
   if (gistId) {
     try {
       const patchRes = await fetch(`https://api.github.com/gists/${gistId}`, {
@@ -3874,18 +3938,16 @@ async function uploadToGitHub() {
         resultGist = await patchRes.json();
       } else {
         const patchErr = await patchRes.json().catch(() => ({}));
-        console.warn(`PATCH existing gist (${gistId}) failed with status ${patchRes.status}: ${patchErr.message || 'unknown'}. Clearing stale Gist ID and falling back to creating a clean Gist...`);
-        await db.deleteItem('settings', 'github_gist_id');
+        console.warn(`PATCH existing gist (${gistId}) failed with status ${patchRes.status}: ${patchErr.message || 'unknown'}. Falling back...`);
         gistId = null;
       }
     } catch (netErr) {
-      console.warn('Network error during PATCH gist, attempting clean Gist fallback:', netErr);
-      await db.deleteItem('settings', 'github_gist_id');
+      console.warn('Network error during PATCH gist, attempting fallback:', netErr);
       gistId = null;
     }
   }
 
-  // 3. If update failed or no gistId yet, create a fresh Secret Gist
+  // 3. If update failed or no gist exists yet on the entire account, create a fresh Secret Gist
   if (!resultGist) {
     const postRes = await fetch('https://api.github.com/gists', {
       method: 'POST',
@@ -3921,7 +3983,7 @@ async function uploadToGitHub() {
 
   const now = new Date().toISOString();
 
-  // Save gist ID and last upload timestamp
+  // Save canonical gist ID and last upload timestamp
   await db.putItem('settings', { key: 'github_gist_id', value: resultGist.id });
   await db.putItem('settings', { key: 'github_last_upload', value: now });
   await store.refreshAll();
@@ -3935,6 +3997,7 @@ async function uploadToGitHub() {
 
 /**
  * Pull latest data from GitHub Secret Gist and restore
+ * ALWAYS checks the latest updated gist on the user's account to pull whatever any device uploaded most recently!
  */
 async function pullFromGitHub() {
   const config = await getGitHubConfig();
@@ -3942,60 +4005,23 @@ async function pullFromGitHub() {
     throw new Error('GitHub Token is not configured. Please save a token first.');
   }
 
-  const findLatestGistId = async () => {
-    const gistsRes = await fetch('https://api.github.com/gists?per_page=50', {
-      headers: {
-        'Authorization': `Bearer ${config.token}`,
-        'Accept': 'application/vnd.github+json'
-      }
-    });
-
-    if (!gistsRes.ok) {
-      if (gistsRes.status === 401) throw new Error('Invalid or expired GitHub Token (Bad credentials).');
-      throw new Error(`Failed to retrieve data from GitHub: HTTP ${gistsRes.status}`);
-    }
-
-    const gists = await gistsRes.json();
-    const matches = gists
-      .filter(g => g.files && g.files[GIST_FILENAME])
-      .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
-
-    if (matches.length === 0) {
-      throw new Error('No muki-stall-data.json backup found on GitHub yet. Please click "Upload to GitHub" on your stall device first.');
-    }
-    return matches[0].id;
-  };
-
-  let gistId = config.gistId;
-  let response = null;
-
-  if (gistId) {
-    response = await fetch(`https://api.github.com/gists/${gistId}`, {
-      headers: {
-        'Authorization': `Bearer ${config.token}`,
-        'Accept': 'application/vnd.github+json'
-      }
-    });
-    if (!response.ok) {
-      console.warn(`Cached gist ID ${gistId} not accessible (HTTP ${response.status}), looking up latest...`);
-      await db.deleteItem('settings', 'github_gist_id');
-      gistId = null;
-    }
+  // Always look up the newest updated Gist across the entire account
+  const latestGistId = await findLatestGistId(config.token);
+  if (!latestGistId) {
+    throw new Error('No muki-stall-data.json backup found on GitHub yet. Please click "Upload to GitHub" on your stall device first.');
   }
 
-  if (!gistId) {
-    gistId = await findLatestGistId();
-    await db.putItem('settings', { key: 'github_gist_id', value: gistId });
-    response = await fetch(`https://api.github.com/gists/${gistId}`, {
-      headers: {
-        'Authorization': `Bearer ${config.token}`,
-        'Accept': 'application/vnd.github+json'
-      }
-    });
-  }
+  // Fetch the latest gist content
+  const response = await fetch(`https://api.github.com/gists/${latestGistId}`, {
+    headers: {
+      'Authorization': `Bearer ${config.token}`,
+      'Accept': 'application/vnd.github+json'
+    }
+  });
 
-  if (!response || !response.ok) {
-    throw new Error(`Failed to pull from GitHub: HTTP ${response ? response.status : 'unknown'}`);
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Invalid or expired GitHub Token (Bad credentials).');
+    throw new Error(`Failed to pull from GitHub: HTTP ${response.status}`);
   }
 
   const gistData = await response.json();
@@ -4014,10 +4040,11 @@ async function pullFromGitHub() {
 
   const validated = validateBackupFile(parsed);
 
-  // Restore data
+  // Restore full data
   await restoreFromBackup(parsed, 'replace');
 
   const now = new Date().toISOString();
+  await db.putItem('settings', { key: 'github_gist_id', value: latestGistId });
   await db.putItem('settings', { key: 'github_last_pull', value: now });
   await store.refreshAll();
 
@@ -4027,7 +4054,6 @@ async function pullFromGitHub() {
     counts: validated.counts
   };
 }
-
 
 
 // ==========================================
@@ -6937,7 +6963,7 @@ function renderBackup() {
                 : `<span class="badge badge-outline">Not Connected</span>`}
             </div>
             <p class="card-subtitle" style="margin-top:6px;line-height:1.5;">
-              Store data securely in your free private GitHub Gist. Click <strong>"Upload to GitHub"</strong> when closing the stall, and click <strong>"Pull Data from GitHub"</strong> at home to see complete records!
+              Complete all-in-one cloud backup: All products, inventory stock counts, FIFO batches, samples &amp; keepsake, sales orders, expenses, and settings are synchronized together in 1 single file.
             </p>
           </div>
         </div>
@@ -6956,24 +6982,52 @@ function renderBackup() {
               </div>
             </div>
 
+            <!-- What is included banner -->
+            <div style="background:#ffffff;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px;font-size:0.8rem;line-height:1.5;">
+              <div style="font-weight:700;color:var(--color-brown);margin-bottom:4px;display:flex;align-items:center;gap:6px;">
+                ${renderIcon('check', 14)}
+                <span>All-in-One Cloud Sync: Complete Stall State Included</span>
+              </div>
+              <div style="color:var(--text-main);display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
+                <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);font-size:0.72rem;padding:3px 8px;font-weight:700;">
+                  ${store.products.length} Products (${store.getTotalPhysicalStock()} pcs stock)
+                </span>
+                <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);font-size:0.72rem;padding:3px 8px;">
+                  FIFO Batches &amp; Costs
+                </span>
+                <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);font-size:0.72rem;padding:3px 8px;">
+                  Samples &amp; Keepsake (${store.getTotalDisplayStock()} disp / ${store.getTotalReservedStock()} keep)
+                </span>
+                <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);font-size:0.72rem;padding:3px 8px;">
+                  ${store.orders.length} Sales Orders
+                </span>
+                <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);font-size:0.72rem;padding:3px 8px;">
+                  ${store.expenses.length} Expenses
+                </span>
+                <span class="badge" style="background:var(--bg-secondary);color:var(--color-brown);font-size:0.72rem;padding:3px 8px;">
+                  ${store.recipes.length} Bundle Recipes
+                </span>
+              </div>
+            </div>
+
             <div class="grid-2" style="gap:14px;">
               <button type="button" class="btn btn-primary btn-lg" id="btn-github-upload" style="display:flex;flex-direction:column;gap:3px;padding:12px 16px;">
                 <div style="display:flex;align-items:center;gap:6px;font-size:0.95rem;font-weight:700;">
                   ${renderIcon('upload', 18)}
-                  <span>1. Closing Stall: Upload to GitHub</span>
+                  <span>1. Closing Stall: Full Cloud Upload (All Data)</span>
                 </div>
                 <div style="font-size:0.75rem;opacity:0.85;font-weight:normal;">
-                  Save today's sales and stock to your private cloud
+                  Save all products, inventory, orders &amp; expenses to cloud
                 </div>
               </button>
 
               <button type="button" class="btn btn-secondary btn-lg" id="btn-github-pull" style="display:flex;flex-direction:column;gap:3px;padding:12px 16px;border-color:var(--color-black);">
                 <div style="display:flex;align-items:center;gap:6px;font-size:0.95rem;font-weight:700;">
                   ${renderIcon('download', 18)}
-                  <span>2. At Home: Pull Data from GitHub</span>
+                  <span>2. At Home / Phone / iPad: Pull Full Data</span>
                 </div>
                 <div style="font-size:0.75rem;color:var(--text-muted);font-weight:normal;">
-                  Sync latest stall records to this device
+                  Sync latest products, inventory, orders &amp; expenses to this device
                 </div>
               </button>
             </div>
@@ -8007,7 +8061,7 @@ function attachEventListeners() {
     }
     try {
       const res = await uploadToGitHub();
-      showToast(`Sync successful! Uploaded to GitHub (${res.summary.orders} orders, ${res.summary.products} products)`, 'success');
+      showToast(`Cloud sync complete! Saved all ${res.summary.products} products (${res.summary.totalStock || 0} pcs stock), ${res.summary.orders} orders & expenses to GitHub.`, 'success');
     } catch (err) {
       alert(`Upload failed: ${err.message}`);
     } finally {
@@ -8028,12 +8082,12 @@ function attachEventListeners() {
   const githubPullBtn = document.getElementById('btn-github-pull');
   if (githubPullBtn) {
     githubPullBtn.addEventListener('click', async () => {
-      if (!confirm('Pull latest data from GitHub and restore on this device?')) return;
+      if (!confirm('Pull latest cloud backup from GitHub and restore everything (all products, inventory stock, sales orders, expenses) on this device?')) return;
       githubPullBtn.disabled = true;
-      githubPullBtn.innerHTML = '<span>Pulling data from GitHub...</span>';
+      githubPullBtn.innerHTML = '<span>Pulling full data from GitHub...</span>';
       try {
         const res = await pullFromGitHub();
-        showToast(`Pull successful! Restored ${res.counts.orders} orders from GitHub`, 'success');
+        showToast(`Pull successful! Restored all ${res.counts.products} products (${res.counts.totalStock || 0} pcs stock), ${res.counts.orders} orders & expenses from GitHub!`, 'success');
       } catch (err) {
         alert(`Pull failed: ${err.message}`);
       } finally {
